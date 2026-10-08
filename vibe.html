@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f5f1e8">
+  <title>PAINT CATCHER — 물감 수집 아케이드</title>
+  <link rel="stylesheet" href="./style.css">
+</head>
+<body>
+  <main class="app">
+    <header class="topbar">
+      <a class="brand" href="./vibe.html" aria-label="Paint Catcher 홈">
+        <span class="brand-mark" aria-hidden="true">P</span>
+        <span>PLAYGROUND<span class="brand-dot">.</span></span>
+      </a>
+      <span class="build-tag">ARCADE NO. 001</span>
+    </header>
+
+    <section class="game-shell" aria-labelledby="game-title">
+      <div class="intro">
+        <p class="eyebrow"><span class="eyebrow-dot"></span> COLOR COLLECTION GAME</p>
+        <h1 id="game-title">PAINT<br class="mobile-break"> CATCHER<span class="title-period">.</span></h1>
+        <p class="intro-copy">목표 색깔만 쏙쏙 받아 보세요.<br class="mobile-break"> 엉뚱한 색은 그릇에 담지 않도록 조심!</p>
+      </div>
+
+      <section class="game-card" aria-label="물감 수집 게임">
+        <div class="hud">
+          <div class="hud-stage">
+            <span class="hud-label">STAGE</span>
+            <span class="stage-value" id="stage-number">01</span>
+          </div>
+          <div class="hud-target">
+            <span class="hud-label">TARGET COLOR</span>
+            <span class="target-value"><span class="target-swatch" aria-hidden="true"></span><span id="target-name">RED · 빨강</span></span>
+          </div>
+          <div class="hud-collected">
+            <span class="hud-label">COLLECTED / GOAL</span>
+            <span class="collected-value"><span id="collected-count">0</span><span class="count-unit">/ <span id="target-count">5</span></span></span>
+          </div>
+          <div class="hud-time">
+            <span class="hud-label">TIME LEFT</span>
+            <span class="time-value" id="remaining-time">01:30</span>
+          </div>
+          <div class="hud-lives">
+            <span class="hud-label">LIVES</span>
+            <span class="lives-value" id="lives-display" role="img" aria-label="목숨 3개">
+              <span class="life-heart" aria-hidden="true">♥</span>
+              <span class="life-heart" aria-hidden="true">♥</span>
+              <span class="life-heart" aria-hidden="true">♥</span>
+            </span>
+          </div>
+          <div class="hud-umbrella">
+            <span class="hud-label">UMBRELLAS</span>
+            <span class="umbrella-value" id="umbrella-display" role="img" aria-label="우산 0개">
+              <span class="umbrella-icon" aria-hidden="true">☂</span>
+              <span id="umbrella-count">0</span>
+              <span class="umbrella-timer" id="umbrella-timer" hidden></span>
+            </span>
+            <span class="umbrella-hint"><span class="keycap">Space</span> 사용</span>
+          </div>
+          <div class="hud-fever">
+            <span class="hud-label">FEVER CARD</span>
+            <span class="fever-card-value" id="fever-card-display" role="img" aria-label="피버타임 카드 0장">
+              <span class="fever-card-icon" aria-hidden="true">▰</span>
+              <span id="fever-card-count">0</span>
+              <span class="fever-timer" id="fever-timer" hidden></span>
+            </span>
+            <span class="fever-hint"><span class="keycap">F</span> 사용</span>
+          </div>
+          <div class="hud-feedback" id="feedback" role="status" aria-live="polite">빨간 물감 5개를 모아 보세요!</div>
+        </div>
+
+        <div class="canvas-wrap">
+          <div class="fever-banner" id="fever-banner" aria-live="polite" hidden>
+            <strong>FEVER TIME!</strong><span id="fever-banner-timer">5.0s</span>
+          </div>
+          <canvas id="game-canvas" tabindex="0" aria-label="물감이 떨어지는 게임 화면. 마우스 또는 좌우 방향키로 그릇을 움직입니다.">
+            이 게임을 플레이하려면 Canvas를 지원하는 브라우저가 필요합니다.
+          </canvas>
+          <div class="start-overlay" id="start-overlay">
+            <div class="start-card">
+              <span class="start-icon" id="overlay-icon" aria-hidden="true">↓</span>
+              <p class="start-kicker" id="overlay-kicker">READY WHEN YOU ARE</p>
+              <h2 id="overlay-title">물감을 받아 볼까요?</h2>
+              <p id="overlay-copy">빨간 물감은 받고, 다른 색은 피하세요.</p>
+              <button class="start-button" id="start-button" type="button">게임 시작 <span aria-hidden="true">→</span></button>
+            </div>
+          </div>
+        </div>
+
+        <div class="game-footer">
+          <p class="controls-hint"><span class="keycap">←</span><span class="keycap">→</span> 또는 마우스로 그릇 이동</p>
+          <span class="footer-note"><span class="live-dot" id="status-dot"></span><span id="game-status">READY TO PLAY</span></span>
+        </div>
+      </section>
+      <p class="color-note">빨강 · 주황 · 노랑 · 초록 · 파랑 · 남색 · 보라 <span aria-hidden="true">—</span> 일곱 빛깔 물감이 내려와요.</p>
+    </section>
+
+    <footer class="page-footer">
+      <span>PAINT CATCHER</span>
+      <span>MADE FOR COLOR LOVERS</span>
+    </footer>
+  </main>
+  <script type="module" src="./js/main.js"></script>
+</body>
+</html>
