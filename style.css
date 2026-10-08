@@ -135,14 +135,14 @@ h1 {
 .hud {
   min-height: 79px;
   display: grid;
-  grid-template-columns: .65fr 1.25fr 1.2fr .85fr 1fr;
+  grid-template-columns: .5fr 1fr 1fr .75fr .7fr .85fr .85fr;
   align-items: center;
   gap: 13px;
   padding: 13px 22px;
   border-bottom: 1px solid var(--line);
 }
 
-.hud-stage, .hud-target, .hud-collected, .hud-time, .hud-lives { display: grid; gap: 6px; }
+.hud-stage, .hud-target, .hud-collected, .hud-time, .hud-lives, .hud-umbrella, .hud-fever { display: grid; gap: 6px; }
 
 .hud-label {
   color: #a09a8e;
@@ -187,6 +187,88 @@ h1 {
 .life-heart { color: #ed6545; }
 .life-heart.is-lost { color: #ded8cc; }
 
+.umbrella-value {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 18px;
+  font-weight: 800;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+
+.umbrella-icon { color: #438bd1; }
+.umbrella-value.is-active { color: #2879c3; }
+
+.umbrella-timer {
+  color: #438bd1;
+  font-family: "DM Mono", monospace;
+  font-size: 10px;
+  font-weight: 500;
+}
+
+.umbrella-hint {
+  display: inline-flex;
+  align-items: center;
+  color: #89857c;
+  font-family: "Gowun Dodum", sans-serif;
+  font-size: 9px;
+  white-space: nowrap;
+}
+
+.umbrella-hint .keycap {
+  min-width: 35px;
+  height: 17px;
+  font-size: 8px;
+}
+
+.fever-card-value {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 18px;
+  font-weight: 800;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+
+.fever-card-icon {
+  display: inline-grid;
+  width: 17px;
+  height: 21px;
+  place-items: center;
+  border: 1px solid #d9a94e;
+  border-radius: 3px;
+  color: #fff8e7;
+  background: linear-gradient(145deg, #e9bd65, #cd8c36);
+  font-size: 11px;
+  box-shadow: 1px 2px 0 #a96e2e;
+}
+
+.fever-card-value.is-active { color: #b57a27; }
+
+.fever-timer {
+  color: #bf852e;
+  font-family: "DM Mono", monospace;
+  font-size: 10px;
+  font-weight: 500;
+}
+
+.fever-hint {
+  display: inline-flex;
+  align-items: center;
+  color: #89857c;
+  font-family: "Gowun Dodum", sans-serif;
+  font-size: 9px;
+  white-space: nowrap;
+}
+
+.fever-hint .keycap {
+  min-width: 20px;
+  height: 17px;
+  font-size: 8px;
+}
+
 .collected-value {
   font-size: 22px;
   font-weight: 800;
@@ -224,6 +306,34 @@ h1 {
   background-size: 19px 19px;
   touch-action: none;
 }
+
+.canvas-wrap.fever-active {
+  box-shadow: inset 0 0 0 4px rgba(236, 177, 64, .75), inset 0 0 35px rgba(240, 195, 99, .18);
+}
+
+.fever-banner {
+  position: absolute;
+  z-index: 1;
+  top: 15px;
+  left: 50%;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 13px;
+  border: 1px solid rgba(185, 128, 37, .34);
+  border-radius: 999px;
+  color: #9c641b;
+  background: rgba(255, 248, 222, .92);
+  box-shadow: 0 4px 14px rgba(137, 94, 27, .12);
+  font-family: "DM Mono", monospace;
+  font-size: 10px;
+  letter-spacing: .08em;
+  transform: translateX(-50%);
+  pointer-events: none;
+}
+
+.fever-banner[hidden] { display: none; }
+.fever-banner span { color: #76603b; font-variant-numeric: tabular-nums; }
 
 canvas {
   width: 100%;
@@ -311,6 +421,7 @@ canvas {
 
 .start-button:hover { background: var(--orange); }
 .start-button:active { transform: translateY(1px); }
+.start-button:disabled { opacity: .55; cursor: wait; }
 
 .start-button:focus-visible {
   outline: 3px solid #ed6545;
@@ -401,6 +512,15 @@ canvas {
   .hud-lives { grid-column: 3; grid-row: 1; }
   .hud-time { grid-column: 1; grid-row: 2; }
   .hud-collected { grid-column: 2 / 4; grid-row: 2; }
+  .hud-umbrella { grid-column: 1 / 4; grid-row: 3; grid-template-columns: auto 1fr; align-items: center; }
+  .hud-umbrella .hud-label { grid-column: 1; }
+  .umbrella-value { grid-column: 2; grid-row: 1 / 3; }
+  .umbrella-hint { grid-column: 3; grid-row: 1 / 3; justify-self: start; }
+  .hud-fever { grid-column: 1 / 4; grid-row: 4; grid-template-columns: auto 1fr; align-items: center; }
+  .hud-fever .hud-label { grid-column: 1; }
+  .fever-card-value { grid-column: 2; grid-row: 1 / 3; }
+  .fever-hint { grid-column: 3; grid-row: 1 / 3; justify-self: start; }
+  .hud-feedback { grid-row: 5; }
   .stage-value, .time-value { font-size: 17px; }
   .target-value { gap: 6px; font-size: 13px; }
   canvas { height: clamp(290px, 93vw, 390px); }

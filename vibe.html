@@ -50,10 +50,31 @@
               <span class="life-heart" aria-hidden="true">♥</span>
             </span>
           </div>
+          <div class="hud-umbrella">
+            <span class="hud-label">UMBRELLAS</span>
+            <span class="umbrella-value" id="umbrella-display" role="img" aria-label="우산 0개">
+              <span class="umbrella-icon" aria-hidden="true">☂</span>
+              <span id="umbrella-count">0</span>
+              <span class="umbrella-timer" id="umbrella-timer" hidden></span>
+            </span>
+            <span class="umbrella-hint"><span class="keycap">Space</span> 사용</span>
+          </div>
+          <div class="hud-fever">
+            <span class="hud-label">FEVER CARD</span>
+            <span class="fever-card-value" id="fever-card-display" role="img" aria-label="피버타임 카드 0장">
+              <span class="fever-card-icon" aria-hidden="true">▰</span>
+              <span id="fever-card-count">0</span>
+              <span class="fever-timer" id="fever-timer" hidden></span>
+            </span>
+            <span class="fever-hint"><span class="keycap">F</span> 사용</span>
+          </div>
           <div class="hud-feedback" id="feedback" role="status" aria-live="polite">빨간 물감 5개를 모아 보세요!</div>
         </div>
 
         <div class="canvas-wrap">
+          <div class="fever-banner" id="fever-banner" aria-live="polite" hidden>
+            <strong>FEVER TIME!</strong><span id="fever-banner-timer">5.0s</span>
+          </div>
           <canvas id="game-canvas" tabindex="0" aria-label="물감이 떨어지는 게임 화면. 마우스 또는 좌우 방향키로 그릇을 움직입니다.">
             이 게임을 플레이하려면 Canvas를 지원하는 브라우저가 필요합니다.
           </canvas>
