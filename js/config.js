@@ -17,6 +17,24 @@ export const GAME_CONFIG = {
   paintRadius: { min: 13, max: 19 },
   spawnInterval: 0.85,
   firstSpawnDelay: 0.45,
+  paintSpawn: {
+    minBatchSize: 2,
+    maxBatchSize: 4,
+    sequenceInterval: 0.18,
+    minimumHorizontalSpacing: 56,
+    targetChance: {
+      stage1: 0.45,
+      stages2To5: 0.4,
+      stage6Plus: 0.35,
+      minimum: 0.35
+    },
+    targetGuaranteeInterval: 3,
+    batchWeights: {
+      stage1: [0.76, 0.2, 0.04],
+      stages2To5: [0.45, 0.4, 0.15],
+      stage6Plus: [0.2, 0.4, 0.4]
+    }
+  },
   initialLives: 3,
   stageDuration: 90,
   paintsPerStage: 5,
@@ -25,9 +43,9 @@ export const GAME_CONFIG = {
   maxFeverCards: 1,
   feverDuration: 5,
   fallSpeed: {
-    baseMultiplier: 1,
-    stageStep: 0.1,
-    maxMultiplier: 2
+    baseMultiplier: 1.2,
+    stageStep: 0.12,
+    maxMultiplier: 2.5
   },
   umbrellaWidth: 156,
   umbrellaCanopyHeight: 22,

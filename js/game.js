@@ -37,6 +37,9 @@ export class Game {
     this.paints = [];
     this.nextPaintId = 1;
     this.spawnTimer = GAME_CONFIG.firstSpawnDelay;
+    this.timeSinceTargetSpawn = 0;
+    this.pendingPaintSpawns = [];
+    this.spawnSequenceTimer = 0;
     this.player = { x: 0, y: 0, width: GAME_CONFIG.playerWidth, height: GAME_CONFIG.playerHeight };
     this.input = { source: "mouse", mouseX: 0, left: false, right: false };
     this.feedback = null;
@@ -87,6 +90,9 @@ export class Game {
     this.wrongCount = 0;
     this.paints = [];
     this.spawnTimer = GAME_CONFIG.firstSpawnDelay;
+    this.timeSinceTargetSpawn = 0;
+    this.pendingPaintSpawns = [];
+    this.spawnSequenceTimer = 0;
     this.feedback = {
       text: `${this.targetColor.name} 물감 ${this.targetCount}개를 모아 보세요!`,
       color: "#6d695f",
@@ -183,6 +189,7 @@ export class Game {
 
     const activeDelta = Math.min(deltaTime, this.remainingTime);
     this.updatePaintExplosions(activeDelta);
+    this.timeSinceTargetSpawn += activeDelta;
     const previousPlayerX = this.player.x;
     this.updatePlayer(activeDelta);
     if (this.umbrellaActive) {
@@ -192,9 +199,22 @@ export class Game {
       );
     }
     this.spawnTimer -= activeDelta;
+    let batchStarted = false;
     while (this.spawnTimer <= 0) {
-      this.spawnPaint();
+      if (this.pendingPaintSpawns.length === 0) {
+        this.queuePaintBatch();
+        batchStarted = true;
+      }
       this.spawnTimer += GAME_CONFIG.spawnInterval;
+    }
+    if (this.pendingPaintSpawns.length > 0) {
+      if (!batchStarted) this.spawnSequenceTimer -= activeDelta;
+      while (this.pendingPaintSpawns.length > 0 && this.spawnSequenceTimer <= 1e-9) {
+        const pendingPaint = this.pendingPaintSpawns.shift();
+        const color = this.feverActive ? this.targetColor : pendingPaint.color;
+        this.createPaint(color, pendingPaint.x, pendingPaint.color.id);
+        this.spawnSequenceTimer += GAME_CONFIG.paintSpawn.sequenceInterval;
+      }
     }
 
     for (let index = this.paints.length - 1; index >= 0; index -= 1) {
@@ -304,14 +324,94 @@ export class Game {
   }
 
   spawnPaint() {
+    return this.spawnPaintBatch(1)[0];
+  }
+
+  spawnPaintBatch(forcedCount = null) {
+    return this.preparePaintBatch(forcedCount)
+      .map(({ color, x }) => this.createPaint(color, x));
+  }
+
+  queuePaintBatch() {
+    this.pendingPaintSpawns = this.preparePaintBatch();
+    this.spawnSequenceTimer = 0;
+  }
+
+  preparePaintBatch(forcedCount = null) {
+    const count = forcedCount ?? this.choosePaintBatchSize();
+    const targetChance = this.getTargetColorChance();
+    const guaranteeTarget = !this.feverActive
+      && this.timeSinceTargetSpawn >= GAME_CONFIG.paintSpawn.targetGuaranteeInterval;
+    const colors = this.choosePaintColors(count, targetChance, guaranteeTarget);
+    const positions = this.choosePaintPositions(count);
+    return colors.map((color, index) => ({ color, x: positions[index] }));
+  }
+
+  choosePaintBatchSize() {
+    const settings = GAME_CONFIG.paintSpawn;
+    const weights = this.stage === 1
+      ? settings.batchWeights.stage1
+      : this.stage <= 5
+        ? settings.batchWeights.stages2To5
+        : settings.batchWeights.stage6Plus;
+    const roll = Math.random();
+    let cumulativeWeight = 0;
+    for (let index = 0; index < weights.length; index += 1) {
+      cumulativeWeight += weights[index];
+      if (roll < cumulativeWeight) return settings.minBatchSize + index;
+    }
+    return settings.maxBatchSize;
+  }
+
+  getTargetColorChance() {
+    const chance = GAME_CONFIG.paintSpawn.targetChance;
+    if (this.stage === 1) return chance.stage1;
+    if (this.stage <= 5) return chance.stages2To5;
+    return Math.max(chance.minimum, chance.stage6Plus);
+  }
+
+  choosePaintColors(count, targetChance, guaranteeTarget) {
+    let targetCount = 0;
+    for (let index = 0; index < count; index += 1) {
+      if (Math.random() < targetChance) targetCount += 1;
+    }
+    if (guaranteeTarget) targetCount = Math.max(1, targetCount);
+
+    const otherColors = COLORS.filter((color) => color.id !== this.targetColor.id);
+    shuffle(otherColors);
+    const selected = [
+      ...Array.from({ length: targetCount }, () => this.targetColor),
+      ...otherColors.slice(0, count - targetCount)
+    ];
+    shuffle(selected);
+    return selected;
+  }
+
+  choosePaintPositions(count) {
+    const settings = GAME_CONFIG.paintSpawn;
+    const margin = GAME_CONFIG.paintRadius.max + 5;
+    const left = Math.min(margin, this.width / 2);
+    const right = Math.max(left, this.width - margin);
+    const usableWidth = right - left;
+    const laneWidth = count > 1 ? usableWidth / count : usableWidth;
+    const maxJitter = Math.max(
+      0,
+      Math.min(laneWidth * 0.35, (laneWidth - settings.minimumHorizontalSpacing) * 0.45)
+    );
+    const positions = Array.from({ length: count }, (_, index) => (
+      left + laneWidth * (index + 0.5) + randomBetween(-maxJitter, maxJitter)
+    ));
+    shuffle(positions);
+    return positions;
+  }
+
+  createPaint(color, x, originalColorId = color.id) {
     const radius = randomBetween(GAME_CONFIG.paintRadius.min, GAME_CONFIG.paintRadius.max);
-    const color = COLORS[Math.floor(Math.random() * COLORS.length)];
-    const margin = radius + 5;
-    this.paints.push({
+    const paint = {
       id: this.nextPaintId,
-      colorId: this.feverActive ? this.targetColor.id : color.id,
-      originalColorId: color.id,
-      x: randomBetween(margin, Math.max(margin, this.width - margin)),
+      colorId: color.id,
+      originalColorId,
+      x,
       y: -radius,
       velocityY: randomBetween(GAME_CONFIG.initialFallSpeed.min, GAME_CONFIG.initialFallSpeed.max)
         * this.fallSpeedMultiplier,
@@ -321,8 +421,11 @@ export class Game {
       collisionProcessed: false,
       animation: "fall",
       animationElapsed: 0
-    });
+    };
     this.nextPaintId += 1;
+    this.paints.push(paint);
+    if (color.id === this.targetColor.id) this.timeSinceTargetSpawn = 0;
+    return paint;
   }
 
   collidesWithPlayer(paint) {
@@ -579,4 +682,11 @@ export class Game {
 
 function randomBetween(min, max) {
   return min + Math.random() * (max - min);
+}
+
+function shuffle(items) {
+  for (let index = items.length - 1; index > 0; index -= 1) {
+    const swapIndex = Math.floor(Math.random() * (index + 1));
+    [items[index], items[swapIndex]] = [items[swapIndex], items[index]];
+  }
 }
