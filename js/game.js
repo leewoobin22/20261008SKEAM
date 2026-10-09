@@ -1,4 +1,4 @@
-import { COLORS, GAME_CONFIG, TARGET_COLOR_ID, UMBRELLA_REWARD_INTERVAL } from "./config.js";
+import { COLORS, GAME_CONFIG, SOUND_CONFIG, TARGET_COLOR_ID, UMBRELLA_REWARD_INTERVAL } from "./config.js";
 
 export class Game {
   constructor() {
@@ -22,6 +22,7 @@ export class Game {
     this.feverActive = false;
     this.feverRemainingTime = 0;
     this.feverParticles = [];
+    this.nextFeverParticleColor = 0;
     this.feverFlashRemaining = 0;
     this.feverTitleElapsed = 0;
     this.feverFadeRemaining = 0;
@@ -33,6 +34,9 @@ export class Game {
     this.perfectClear = false;
     this.stageClearRewardGranted = false;
     this.wrongCount = 0;
+    this.melodyIndex = 0;
+    this.lastCorrectCollectionTime = null;
+    this.gameplayTime = 0;
     this.statusMessage = "빨간 물감 5개를 모아 보세요!";
     this.soundEvents = [];
     this.paints = [];
@@ -80,6 +84,7 @@ export class Game {
     this.feverActive = false;
     this.feverRemainingTime = 0;
     this.feverParticles = [];
+    this.nextFeverParticleColor = 0;
     this.feverFlashRemaining = 0;
     this.feverTitleElapsed = 0;
     this.feverFadeRemaining = 0;
@@ -89,6 +94,10 @@ export class Game {
     this.perfectClear = false;
     this.stageClearRewardGranted = false;
     this.wrongCount = 0;
+    this.melodyIndex = 0;
+    this.lastCorrectCollectionTime = null;
+    this.gameplayTime = 0;
+    this.soundEvents = [];
     this.paints = [];
     this.spawnTimer = GAME_CONFIG.firstSpawnDelay;
     this.timeSinceTargetSpawn = 0;
@@ -141,7 +150,7 @@ export class Game {
     this.umbrellaRemainingTime = GAME_CONFIG.umbrellaDuration;
     this.umbrellaOpenElapsed = 0;
     this.statusMessage = "우산이 펼쳐졌어요. 오답 물감을 막아 줍니다!";
-    this.soundEvents.push("umbrella");
+    this.soundEvents.push({ name: "umbrella" });
     this.feedback = {
       text: "우산 방어!",
       color: "#438bd1",
@@ -162,15 +171,21 @@ export class Game {
     this.feverFadeRemaining = 0;
     this.feverFadeColor = this.targetColor.hex;
     this.feverParticles = [];
-    this.spawnFeverParticles(this.width / 2, this.height / 2, GAME_CONFIG.feverVfx.maxParticles);
+    this.nextFeverParticleColor = 0;
+    this.spawnFeverParticles(this.width / 2, this.height / 2, GAME_CONFIG.feverVfx.startParticleCount);
     for (const paint of this.paints) {
       if (!paint.collisionProcessed && paint.animation !== "splash") {
         paint.colorId = this.targetColor.id;
+        paint.displayColorId = this.targetColor.id;
+        paint.feverPaint = true;
+        paint.feverSpeedMultiplier = GAME_CONFIG.fever.fallSpeedMultiplier
+          * GAME_CONFIG.fever.fallSpeedAdjustment;
+        paint.velocityY *= paint.feverSpeedMultiplier;
         paint.colorChangeTime = 0.45;
       }
     }
     this.statusMessage = "FEVER TIME! 화면의 물감이 목표 색으로 바뀌었어요.";
-    this.soundEvents.push("fever");
+    this.soundEvents.push({ name: "fever" });
     this.feedback = {
       text: "FEVER TIME!",
       color: this.targetColor.hex,
@@ -191,6 +206,12 @@ export class Game {
     if (this.width <= 0 || this.height <= 0) return;
 
     const activeDelta = Math.min(deltaTime, this.remainingTime);
+    this.gameplayTime += activeDelta;
+    if (this.lastCorrectCollectionTime !== null
+      && this.gameplayTime - this.lastCorrectCollectionTime > SOUND_CONFIG.melody.continuationWindow) {
+      this.melodyIndex = 0;
+      this.lastCorrectCollectionTime = null;
+    }
     this.updatePaintExplosions(activeDelta);
     this.timeSinceTargetSpawn += activeDelta;
     const previousPlayerX = this.player.x;
@@ -201,21 +222,32 @@ export class Game {
         this.umbrellaOpenElapsed + activeDelta
       );
     }
-    this.spawnTimer -= activeDelta;
+    const spawnRateMultiplier = this.feverActive
+      ? GAME_CONFIG.fever.spawnMultiplier * GAME_CONFIG.fever.spawnRateAdjustment
+      : 1;
+    this.spawnTimer -= activeDelta * spawnRateMultiplier;
     let batchStarted = false;
     while (this.spawnTimer <= 0) {
       if (this.pendingPaintSpawns.length === 0) {
         this.queuePaintBatch();
         batchStarted = true;
+      } else if (this.feverActive) {
+        this.pendingPaintSpawns.push(...this.preparePaintBatch());
       }
       this.spawnTimer += GAME_CONFIG.spawnInterval;
     }
     if (this.pendingPaintSpawns.length > 0) {
       if (!batchStarted) this.spawnSequenceTimer -= activeDelta;
       while (this.pendingPaintSpawns.length > 0 && this.spawnSequenceTimer <= 1e-9) {
+        const maxActivePaints = this.feverActive ? GAME_CONFIG.fever.maxActivePaints : Infinity;
+        if (this.paints.length >= maxActivePaints) {
+          this.pendingPaintSpawns = [];
+          break;
+        }
         const pendingPaint = this.pendingPaintSpawns.shift();
-        const color = this.feverActive ? this.targetColor : pendingPaint.color;
-        this.createPaint(color, pendingPaint.x, pendingPaint.color.id);
+        const feverPaint = this.feverActive;
+        const color = feverPaint ? this.targetColor : pendingPaint.color;
+        this.createPaint(color, pendingPaint.x, color.id, color, feverPaint);
         this.spawnSequenceTimer += GAME_CONFIG.paintSpawn.sequenceInterval;
       }
     }
@@ -233,7 +265,8 @@ export class Game {
       paint.previousY = paint.y;
       paint.colorChangeTime = Math.max(0, (paint.colorChangeTime || 0) - activeDelta);
       paint.animationElapsed += activeDelta;
-      paint.velocityY += GAME_CONFIG.gravity * this.fallSpeedMultiplier * activeDelta;
+      paint.velocityY += GAME_CONFIG.gravity * this.fallSpeedMultiplier
+        * (paint.feverSpeedMultiplier || 1) * activeDelta;
       paint.y += paint.velocityY * activeDelta;
 
       if (this.umbrellaActive && paint.colorId !== this.targetColor.id) {
@@ -251,7 +284,7 @@ export class Game {
             time: 0.32
           });
           if (this.umbrellaImpacts.length > 8) this.umbrellaImpacts.shift();
-          this.soundEvents.push("umbrellaBlock");
+          this.soundEvents.push({ name: "umbrellaBlock" });
           this.feedback = {
             text: "우산으로 막았어요!",
             color: "#438bd1",
@@ -266,7 +299,6 @@ export class Game {
 
       if (this.collidesWithPlayer(paint)) {
         if (!paint.collisionProcessed) {
-          paint.collisionProcessed = true;
           paint.animation = "splash";
           paint.animationElapsed = 0;
           this.resolveCollision(paint);
@@ -298,11 +330,14 @@ export class Game {
     }
     this.updateFeverVisuals(activeDelta);
     if (this.feverActive) {
+      const feverTimeBeforeUpdate = this.feverRemainingTime;
       this.feverRemainingTime = Math.max(0, this.feverRemainingTime - activeDelta);
       if (this.feverRemainingTime <= 1e-9) {
         this.feverActive = false;
         this.feverRemainingTime = 0;
-        this.feverFadeRemaining = GAME_CONFIG.feverVfx.fadeDuration;
+        this.feverFadeRemaining = Math.min(GAME_CONFIG.feverVfx.fadeDuration, feverTimeBeforeUpdate);
+        this.pendingPaintSpawns = [];
+        this.spawnSequenceTimer = 0;
         this.statusMessage = "피버타임이 끝났어요. 바뀐 물감 색은 유지됩니다.";
       }
     }
@@ -333,7 +368,17 @@ export class Game {
 
   spawnPaintBatch(forcedCount = null) {
     return this.preparePaintBatch(forcedCount)
-      .map(({ color, x }) => this.createPaint(color, x));
+      .map(({ color, x }) => {
+        const feverPaint = this.feverActive;
+        const visualColor = feverPaint ? this.targetColor : color;
+        return this.createPaint(
+          feverPaint ? this.targetColor : color,
+          x,
+          color.id,
+          visualColor,
+          feverPaint
+        );
+      });
   }
 
   queuePaintBatch() {
@@ -343,11 +388,14 @@ export class Game {
 
   preparePaintBatch(forcedCount = null) {
     const count = forcedCount ?? this.choosePaintBatchSize();
+    const positions = this.choosePaintPositions(count);
+    if (this.feverActive) {
+      return positions.map((x) => ({ color: this.targetColor, x }));
+    }
     const targetChance = this.getTargetColorChance();
     const guaranteeTarget = !this.feverActive
       && this.timeSinceTargetSpawn >= GAME_CONFIG.paintSpawn.targetGuaranteeInterval;
     const colors = this.choosePaintColors(count, targetChance, guaranteeTarget);
-    const positions = this.choosePaintPositions(count);
     return colors.map((color, index) => ({ color, x: positions[index] }));
   }
 
@@ -362,9 +410,15 @@ export class Game {
     let cumulativeWeight = 0;
     for (let index = 0; index < weights.length; index += 1) {
       cumulativeWeight += weights[index];
-      if (roll < cumulativeWeight) return settings.minBatchSize + index;
+      if (roll < cumulativeWeight) return this.getFeverBatchSize(settings.minBatchSize + index);
     }
-    return settings.maxBatchSize;
+    return this.getFeverBatchSize(settings.maxBatchSize);
+  }
+
+  getFeverBatchSize(batchSize) {
+    return this.feverActive
+      ? Math.min(GAME_CONFIG.fever.maxBatchSize, batchSize * GAME_CONFIG.fever.spawnMultiplier)
+      : batchSize;
   }
 
   getTargetColorChance() {
@@ -409,16 +463,24 @@ export class Game {
     return positions;
   }
 
-  createPaint(color, x, originalColorId = color.id) {
+  createPaint(color, x, originalColorId = color.id, displayColor = color, feverPaint = this.feverActive) {
     const radius = randomBetween(GAME_CONFIG.paintRadius.min, GAME_CONFIG.paintRadius.max);
     const paint = {
       id: this.nextPaintId,
       colorId: color.id,
+      displayColorId: displayColor.id,
+      feverPaint,
+      feverSpeedMultiplier: feverPaint
+        ? GAME_CONFIG.fever.fallSpeedMultiplier * GAME_CONFIG.fever.fallSpeedAdjustment
+        : 1,
       originalColorId,
       x,
       y: -radius,
       velocityY: randomBetween(GAME_CONFIG.initialFallSpeed.min, GAME_CONFIG.initialFallSpeed.max)
-        * this.fallSpeedMultiplier,
+        * this.fallSpeedMultiplier
+        * (feverPaint
+          ? GAME_CONFIG.fever.fallSpeedMultiplier * GAME_CONFIG.fever.fallSpeedAdjustment
+          : 1),
       previousY: -radius,
       colorChangeTime: this.feverActive ? 0.45 : 0,
       radius,
@@ -509,9 +571,16 @@ export class Game {
           GAME_CONFIG.feverVfx.particleLifetime.max
         ),
         elapsed: 0,
-        color: this.targetColor.hex
+        color: COLORS[this.nextFeverParticleColor % COLORS.length].hex
       });
+      this.nextFeverParticleColor += 1;
     }
+  }
+
+  getFeverVisualStrength() {
+    return this.feverActive
+      ? Math.min(1, this.feverRemainingTime / GAME_CONFIG.feverVfx.fadeDuration)
+      : this.feverFadeRemaining / GAME_CONFIG.feverVfx.fadeDuration;
   }
 
   updateFeverVisuals(deltaTime) {
@@ -535,8 +604,14 @@ export class Game {
   }
 
   resolveCollision(paint) {
+    if (paint.collisionProcessed) return;
+    paint.collisionProcessed = true;
     const correct = paint.colorId === this.targetColor.id;
     if (correct) {
+      const continuingMelody = this.lastCorrectCollectionTime !== null
+        && this.gameplayTime - this.lastCorrectCollectionTime <= SOUND_CONFIG.melody.continuationWindow;
+      this.melodyIndex = continuingMelody ? (this.melodyIndex + 1) % SOUND_CONFIG.melody.frequencies.length : 0;
+      this.lastCorrectCollectionTime = this.gameplayTime;
       this.collectedCount += 1;
       this.umbrellaRewardCounter += 1;
       const umbrellaRewarded = this.umbrellaRewardCounter % UMBRELLA_REWARD_INTERVAL === 0
@@ -554,15 +629,21 @@ export class Game {
         y: this.player.y - 12,
         time: 0.9
       };
+      if (this.feverActive) {
+        this.spawnFeverParticles(paint.x, paint.y, GAME_CONFIG.feverVfx.collectParticleCount);
+      }
+      this.soundEvents.push({
+        name: "paintCollect",
+        noteIndex: this.melodyIndex,
+        fever: this.feverActive
+      });
       if (this.collectedCount >= this.targetCount) {
         this.finishStage("STAGE_CLEAR");
-      } else {
-        this.soundEvents.push("paintCollect");
       }
     } else {
       const color = COLORS.find((item) => item.id === paint.colorId);
       if (this.umbrellaActive) {
-        this.soundEvents.push("umbrellaBlock");
+        this.soundEvents.push({ name: "umbrellaBlock" });
         this.feedback = {
           text: "우산으로 막았어요!",
           color: "#438bd1",
@@ -572,6 +653,8 @@ export class Game {
         };
         this.statusMessage = `${color.name} 물감을 우산으로 막았어요!`;
       } else {
+        this.melodyIndex = 0;
+        this.lastCorrectCollectionTime = null;
         this.createPaintExplosion(paint, color);
         this.wrongCount += 1;
         this.lives = Math.max(0, this.lives - 1);
@@ -588,7 +671,7 @@ export class Game {
         if (this.lives === 0) {
           this.finishStage("GAME_OVER");
         } else {
-          this.soundEvents.push("paintSplash");
+          this.soundEvents.push({ name: "paintSplash" });
         }
       }
     }
@@ -640,11 +723,18 @@ export class Game {
   finishStage(state) {
     if (this.state !== "PLAYING") return;
     this.state = state;
-    this.soundEvents = state === "STAGE_CLEAR"
-      ? ["stageClear"]
-      : state === "GAME_OVER"
-        ? ["gameOver"]
-        : [];
+    if (state === "STAGE_CLEAR") {
+      const lastCollectionSound = [...this.soundEvents].reverse()
+        .find((event) => event.name === "paintCollect");
+      this.soundEvents = [
+        ...(lastCollectionSound ? [lastCollectionSound] : []),
+        { name: "stageClear" }
+      ];
+    } else if (state === "GAME_OVER") {
+      this.soundEvents = [{ name: "gameOver" }];
+    } else {
+      this.soundEvents = [];
+    }
     this.umbrellaCount = 0;
     this.umbrellaActive = false;
     this.umbrellaRemainingTime = 0;

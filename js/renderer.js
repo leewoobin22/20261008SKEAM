@@ -73,6 +73,7 @@ export class Renderer {
     }
     this.drawPaintExplosions(context, game.paintExplosions);
     this.drawPlayer(context, game.player, game.playerHitFlashRemaining);
+    if (game.feverActive) this.drawFeverPlayerAura(context, game);
     if (game.umbrellaActive) {
       this.drawUmbrella(context, game.player, game.getUmbrellaOpenProgress());
       this.drawUmbrellaImpacts(context, game.umbrellaImpacts);
@@ -87,11 +88,27 @@ export class Renderer {
     gradient.addColorStop(1, "rgba(235, 226, 208, 0.19)");
     context.fillStyle = gradient;
     context.fillRect(0, 0, this.width, this.height);
-    const feverFade = game.feverActive
-      ? Math.min(1, game.feverRemainingTime)
-      : game.feverFadeRemaining / GAME_CONFIG.feverVfx.fadeDuration;
+    const feverFade = game.getFeverVisualStrength();
     if (feverFade > 0) {
-      const pulse = 0.82 + Math.sin(game.effectTime * 3.2) * 0.18;
+      const flow = (Math.sin(game.effectTime * 0.32) + 1) / 2;
+      const rainbow = context.createLinearGradient(
+        -this.width * 0.8 + flow * this.width * 1.6,
+        this.height,
+        flow * this.width * 1.5,
+        0
+      );
+      rainbow.addColorStop(0, "rgba(255, 76, 112, 0.28)");
+      rainbow.addColorStop(0.2, "rgba(255, 151, 54, 0.27)");
+      rainbow.addColorStop(0.4, "rgba(255, 221, 66, 0.26)");
+      rainbow.addColorStop(0.6, "rgba(74, 190, 103, 0.26)");
+      rainbow.addColorStop(0.8, "rgba(53, 145, 226, 0.27)");
+      rainbow.addColorStop(1, "rgba(157, 95, 206, 0.28)");
+      context.save();
+      context.globalAlpha = feverFade * 0.85;
+      context.fillStyle = rainbow;
+      context.fillRect(0, 0, this.width, this.height);
+      context.restore();
+
       const glow = context.createRadialGradient(
         this.width / 2,
         this.height / 2,
@@ -100,16 +117,16 @@ export class Renderer {
         this.height / 2,
         Math.max(this.width, this.height) * 0.72
       );
-      glow.addColorStop(0, `${game.targetColor.hex}00`);
+      glow.addColorStop(0, "rgba(255,255,255,0)");
       glow.addColorStop(1, hexToRgba(
-        game.feverActive ? game.targetColor.hex : game.feverFadeColor,
-        GAME_CONFIG.feverVfx.glowStrength * feverFade * pulse
+        game.feverFadeColor,
+        GAME_CONFIG.feverVfx.glowStrength * feverFade
       ));
       context.fillStyle = glow;
       context.fillRect(0, 0, this.width, this.height);
     }
     if (game.feverFlashRemaining > 0) {
-      context.fillStyle = `rgba(255, 255, 255, ${game.feverFlashRemaining / GAME_CONFIG.feverVfx.flashDuration * 0.72})`;
+      context.fillStyle = `rgba(255, 255, 255, ${game.feverFlashRemaining / GAME_CONFIG.feverVfx.flashDuration * 0.18})`;
       context.fillRect(0, 0, this.width, this.height);
     }
   }
@@ -119,7 +136,8 @@ export class Renderer {
     const isSplash = paint.animation === "splash";
     const fps = isSplash ? GAME_CONFIG.splashAnimationFps : GAME_CONFIG.fallAnimationFps;
     const frame = Math.min(GAME_CONFIG.paintFrameCount - 1, Math.floor(paint.animationElapsed * fps));
-    const sprite = this.sprites.get(spriteKey(paint.colorId, paint.animation, frame));
+    const visualColorId = paint.feverPaint && !isSplash ? paint.displayColorId : paint.colorId;
+    const sprite = this.sprites.get(spriteKey(visualColorId, paint.animation, frame));
     if (sprite?.complete && sprite.naturalWidth > 0) {
       const size = GAME_CONFIG.paintSpriteSize;
       context.drawImage(sprite, paint.x - size / 2, paint.y - size / 2, size, size);
@@ -131,7 +149,8 @@ export class Renderer {
       return;
     }
 
-    this.drawFallbackPaint(context, paint, color);
+    const visualColor = COLORS.find((item) => item.id === visualColorId);
+    this.drawFallbackPaint(context, paint, visualColor);
   }
 
   drawFallbackPaint(context, paint, color) {
@@ -316,9 +335,12 @@ export class Renderer {
 
   drawFeverSparkles(context, game, paint) {
     const pulse = 0.45 + (Math.sin(game.effectTime * 9 + paint.id) + 1) * 0.25;
+    const color = COLORS.find((item) => item.id === paint.displayColorId);
     context.save();
-    context.globalAlpha = pulse * Math.min(1, game.feverRemainingTime);
-    context.fillStyle = "#fff9d7";
+    context.globalAlpha = pulse * game.getFeverVisualStrength();
+    context.fillStyle = color.hex;
+    context.shadowColor = color.hex;
+    context.shadowBlur = 7;
     for (let index = 0; index < 2; index += 1) {
       const angle = game.effectTime * 2.5 + paint.id * 1.7 + index * Math.PI;
       const x = paint.x + Math.cos(angle) * (paint.radius + 7);
@@ -344,7 +366,7 @@ export class Renderer {
     if (!hasFeverEffect) return;
     for (const particle of game.feverParticles) {
       const life = 1 - particle.elapsed / particle.lifetime;
-      const fade = game.feverActive ? 1 : game.feverFadeRemaining / GAME_CONFIG.feverVfx.fadeDuration;
+      const fade = game.getFeverVisualStrength();
       context.save();
       context.globalAlpha = life * fade;
       context.fillStyle = particle.color;
@@ -369,13 +391,43 @@ export class Renderer {
       context.font = `800 ${Math.min(48, this.width * 0.105)}px "DM Sans", sans-serif`;
       context.lineWidth = 5;
       context.strokeStyle = "rgba(255,255,255,.9)";
-      context.fillStyle = game.targetColor.hex;
-      context.shadowColor = game.targetColor.hex;
+      const titleGradient = context.createLinearGradient(-100, 0, 100, 0);
+      titleGradient.addColorStop(0, "#ed6680");
+      titleGradient.addColorStop(0.25, "#efa94f");
+      titleGradient.addColorStop(0.5, "#79b884");
+      titleGradient.addColorStop(0.75, "#579bd3");
+      titleGradient.addColorStop(1, "#a47ac9");
+      context.fillStyle = titleGradient;
+      context.shadowColor = "#eaa85e";
       context.shadowBlur = 22;
       context.strokeText("FEVER TIME!", 0, 0);
       context.fillText("FEVER TIME!", 0, 0);
       context.restore();
     }
+  }
+
+  drawFeverPlayerAura(context, game) {
+    const { player } = game;
+    const gradient = context.createLinearGradient(
+      player.x - player.width / 2,
+      player.y,
+      player.x + player.width / 2,
+      player.y
+    );
+    COLORS.forEach((color, index) => {
+      gradient.addColorStop(index / (COLORS.length - 1), color.hex);
+    });
+    context.save();
+    context.globalAlpha = game.getFeverVisualStrength() * 0.82;
+    context.strokeStyle = gradient;
+    context.lineWidth = 3;
+    context.shadowColor = "#e4a9d2";
+    context.shadowBlur = 10;
+    context.beginPath();
+    context.moveTo(player.x - player.width / 2, player.y + 1);
+    context.quadraticCurveTo(player.x, player.y + 15, player.x + player.width / 2, player.y + 1);
+    context.stroke();
+    context.restore();
   }
 
   drawFeedback(context, feedback) {

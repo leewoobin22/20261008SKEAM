@@ -12,8 +12,38 @@ export const TARGET_COLOR_ID = "RED";
 export const UMBRELLA_REWARD_INTERVAL = 3;
 export const SOUND_CONFIG = {
   muteStorageKey: "paint-catcher-muted",
-  masterVolume: 0.18,
-  maxConcurrentEffects: 4
+  masterVolume: 0.22,
+  maxConcurrentEffects: 4,
+  effectVolumes: {
+    paintCollect: 1.12,
+    paintSplash: 0.88,
+    umbrellaBlock: 1,
+    umbrella: 1,
+    fever: 1,
+    stageClear: 1,
+    gameOver: 1
+  },
+  melody: {
+    frequencies: [523.25, 587.33, 659.25, 783.99, 880, 783.99, 659.25, 523.25],
+    continuationWindow: 3,
+    maxCrescendo: 1.18
+  },
+  music: {
+    volume: 0.24,
+    crossfadeDuration: 0.22,
+    schedulerInterval: 25,
+    scheduleAhead: 0.12,
+    normal: {
+      bpm: 102,
+      notes: [261.63, 329.63, 392, 329.63, 293.66, 349.23, 440, 349.23, 261.63, 329.63, 392, 329.63, 220, 293.66, 349.23, 293.66],
+      bass: [130.81, 130.81, 164.81, 164.81, 174.61, 174.61, 196, 196]
+    },
+    fever: {
+      bpm: 152,
+      notes: [392, 493.88, 587.33, 493.88, 440, 523.25, 659.25, 523.25, 392, 493.88, 587.33, 659.25, 440, 523.25, 659.25, 783.99],
+      bass: [130.81, 130.81, 164.81, 164.81, 174.61, 174.61, 196, 196]
+    }
+  }
 };
 
 export const GAME_CONFIG = {
@@ -47,6 +77,14 @@ export const GAME_CONFIG = {
   umbrellaDuration: 8,
   maxFeverCards: 1,
   feverDuration: 5,
+  fever: {
+    spawnMultiplier: 2,
+    spawnRateAdjustment: 1.2,
+    fallSpeedMultiplier: 1.3,
+    fallSpeedAdjustment: 1.5,
+    maxBatchSize: 8,
+    maxActivePaints: 24
+  },
   fallSpeed: {
     baseMultiplier: 1.2,
     stageStep: 0.12,
@@ -58,11 +96,13 @@ export const GAME_CONFIG = {
   umbrellaOpenDuration: 0.24,
   feverVfx: {
     maxParticles: 72,
+    startParticleCount: 42,
+    collectParticleCount: 8,
     particleLifetime: { min: 0.65, max: 1.3 },
     flashDuration: 0.2,
     titleDuration: 0.95,
     glowStrength: 0.2,
-    fadeDuration: 0.4
+    fadeDuration: 1
   },
   paintExplosion: {
     duration: 0.5,

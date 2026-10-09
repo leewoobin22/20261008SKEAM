@@ -34,6 +34,7 @@ const renderer = new Renderer(canvas);
 const sound = new Sound();
 let previousTime = 0;
 let displayedState = null;
+let lastSoundGameState = game.state;
 let assetsLoaded = false;
 
 const overlayContent = {
@@ -109,9 +110,10 @@ function syncUi() {
   feverBanner.hidden = !game.feverActive;
   feverBannerTimer.textContent = game.feverActive ? `${game.feverRemainingTime.toFixed(1)}s` : "";
   canvas.parentElement.classList.toggle("fever-active", game.feverActive);
+  canvas.closest(".game-card").classList.toggle("fever-active", game.feverActive);
   feedback.textContent = game.statusMessage;
   soundToggle.setAttribute("aria-pressed", String(sound.enabled));
-  soundToggle.setAttribute("aria-label", "효과음");
+  soundToggle.setAttribute("aria-label", sound.enabled ? "사운드 끄기" : "사운드 켜기");
   soundToggle.textContent = sound.enabled ? "♫ 사운드 켜짐" : "♫ 사운드 꺼짐";
 
   if (displayedState !== game.state) {
@@ -164,7 +166,19 @@ function getCanvasX(event) {
 }
 
 function playPendingSounds() {
-  for (const soundName of game.takeSoundEvents()) sound.play(soundName);
+  if (game.state !== lastSoundGameState) {
+    sound.stopAll();
+    lastSoundGameState = game.state;
+  }
+  if (document.hidden || game.state === "PAUSED") {
+    sound.pauseMusic();
+  } else if (game.state === "PLAYING") {
+    sound.resumeMusic();
+    sound.setMusicMode(game.feverActive ? "fever" : "normal");
+  } else {
+    sound.stopMusic();
+  }
+  for (const soundEvent of game.takeSoundEvents()) sound.play(soundEvent);
 }
 
 function useUmbrella() {
@@ -194,7 +208,16 @@ soundToggle.addEventListener("click", () => {
 });
 
 document.addEventListener("visibilitychange", () => {
-  if (!document.hidden) sound.resumeIfNeeded();
+  if (document.hidden) {
+    sound.stopAll();
+    sound.pauseMusic();
+  } else {
+    sound.resumeIfNeeded();
+    if (game.state === "PLAYING") {
+      sound.resumeMusic();
+      sound.setMusicMode(game.feverActive ? "fever" : "normal");
+    }
+  }
 });
 
 startButton.disabled = true;

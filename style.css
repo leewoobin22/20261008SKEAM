@@ -142,6 +142,29 @@ h1 {
   border-bottom: 1px solid var(--line);
 }
 
+.game-card.fever-active .hud {
+  background-image: linear-gradient(
+    105deg,
+    rgba(255, 116, 141, .08),
+    rgba(255, 185, 110, .08),
+    rgba(255, 233, 135, .08),
+    rgba(133, 218, 166, .08),
+    rgba(119, 184, 239, .08),
+    rgba(191, 149, 224, .08)
+  );
+  background-size: 220% 100%;
+  animation: rainbow-hud-flow 6s linear infinite;
+}
+
+@keyframes rainbow-hud-flow {
+  from { background-position: 100% 0; }
+  to { background-position: 0 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .game-card.fever-active .hud { animation: none; }
+}
+
 .hud-stage, .hud-target, .hud-collected, .hud-time, .hud-lives, .hud-umbrella, .hud-fever { display: grid; gap: 6px; }
 
 .hud-label {
@@ -315,7 +338,7 @@ body.touch-controls .keyboard-hint { display: none; }
 body.touch-controls .touch-hint { display: inline; }
 
 .canvas-wrap.fever-active {
-  box-shadow: inset 0 0 0 4px rgba(236, 177, 64, .75), inset 0 0 35px rgba(240, 195, 99, .18);
+  box-shadow: inset 0 0 0 4px rgba(219, 148, 196, .55), inset 0 0 35px rgba(147, 182, 225, .15);
 }
 
 .fever-banner {
