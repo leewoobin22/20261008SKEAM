@@ -1,6 +1,7 @@
-import { COLORS, GAME_CONFIG } from "./config.js";
+import { COLORS, GAME_CONFIG, TUTORIAL_STORAGE_KEY } from "./config.js";
 import { Game } from "./game.js";
 import { loadPaintSprites, Renderer } from "./renderer.js";
+import { Sound } from "./sound.js";
 
 const canvas = document.querySelector("#game-canvas");
 const overlay = document.querySelector("#start-overlay");
@@ -27,11 +28,41 @@ const feverCardCount = document.querySelector("#fever-card-count");
 const feverTimer = document.querySelector("#fever-timer");
 const feverBanner = document.querySelector("#fever-banner");
 const feverBannerTimer = document.querySelector("#fever-banner-timer");
+const soundToggle = document.querySelector("#sound-toggle");
+const tutorialPanel = document.querySelector("#tutorial-panel");
+const tutorialSkip = document.querySelector("#tutorial-skip");
+const tutorialStep = document.querySelector("#tutorial-step");
+const tutorialTitle = document.querySelector("#tutorial-title");
+const tutorialCopy = document.querySelector("#tutorial-copy");
+const tutorialAction = document.querySelector("#tutorial-action");
+const tutorialRules = document.querySelector("#tutorial-rules");
+const tutorialStart = document.querySelector("#tutorial-start");
+const tutorialReplay = document.querySelector("#tutorial-replay");
 const game = new Game();
 const renderer = new Renderer(canvas);
+const sound = new Sound();
 let previousTime = 0;
 let displayedState = null;
+let lastSoundGameState = game.state;
 let assetsLoaded = false;
+let supportsTouchControls = false;
+
+function hasCompletedTutorial() {
+  try {
+    return localStorage.getItem(TUTORIAL_STORAGE_KEY) === "true";
+  } catch (error) {
+    console.warn("튜토리얼 완료 설정을 읽을 수 없어 첫 방문 튜토리얼을 표시합니다.", error);
+    return false;
+  }
+}
+
+function saveTutorialCompletion() {
+  try {
+    localStorage.setItem(TUTORIAL_STORAGE_KEY, "true");
+  } catch (error) {
+    console.warn("튜토리얼 완료 설정을 저장할 수 없습니다.", error);
+  }
+}
 
 const overlayContent = {
   MENU: {
@@ -76,36 +107,96 @@ function frame(timestamp) {
   const elapsed = previousTime === 0 ? 0 : (timestamp - previousTime) / 1000;
   previousTime = timestamp;
   game.update(Math.min(elapsed, GAME_CONFIG.maxDeltaTime));
+  playPendingSounds();
   syncUi();
   renderer.render(game);
   requestAnimationFrame(frame);
 }
 
+function updateTutorialPanel(tutorial) {
+  const content = [
+    null,
+    {
+      title: "그릇을 움직여 떨어지는 물감을 받아보세요!",
+      copy: "실제로 그릇을 움직이면 다음 단계로 넘어가요.",
+      action: supportsTouchControls ? "손가락으로 좌우 드래그" : "방향키 또는 마우스로 그릇 이동"
+    },
+    {
+      title: "목표 색깔의 물감을 받으면 점수를 얻어요!",
+      copy: `목표 색 ${game.targetColor.id} 물감을 그릇으로 받아보세요.`,
+      action: "떨어지는 목표 색 물감을 기다려 주세요."
+    },
+    {
+      title: "다른 색 물감을 받으면 생명을 잃어요. 피해보세요!",
+      copy: "이번에는 오답 물감이 바닥으로 떨어질 때까지 피하세요.",
+      action: "실수해도 튜토리얼에서는 생명이 줄지 않아요."
+    },
+    {
+      title: "우산을 사용하면 잘못된 색깔의 물감을 막을 수 있어요!",
+      copy: "우산을 펼친 뒤 다가오는 오답 물감을 막아보세요.",
+      action: supportsTouchControls ? "화면을 위로 밀어 우산 사용" : "Space 키로 우산 사용"
+    },
+    {
+      title: "피버타임에는 목표 색깔의 물감이 빠르게 쏟아져요!",
+      copy: "피버카드를 사용하고 5초 동안 목표 물감을 받아보세요.",
+      action: supportsTouchControls ? "화면을 빠르게 두 번 터치해 사용" : "F 키로 피버타임 사용"
+    },
+    {
+      title: "준비됐나요? 목표 색깔을 모아 스테이지를 클리어하세요!",
+      copy: "게임 규칙을 확인하고 스테이지 1을 시작하세요.",
+      action: ""
+    }
+  ][tutorial.step];
+  if (!content) return;
+  tutorialStep.textContent = `${tutorial.step} / 6`;
+  tutorialTitle.textContent = content.title;
+  tutorialCopy.textContent = content.copy;
+  tutorialAction.textContent = content.action;
+  tutorialAction.hidden = !content.action;
+  tutorialRules.hidden = tutorial.step !== 6;
+  tutorialStart.hidden = tutorial.step !== 6;
+}
+
 function syncUi() {
   const target = game.targetColor;
-  stageNumber.textContent = String(game.stage).padStart(2, "0");
+  const tutorial = game.tutorialActive ? game.tutorial : null;
+  const visibleStage = tutorial ? 1 : game.stage;
+  const visibleCollected = tutorial ? 0 : game.collectedCount;
+  const visibleTargetCount = tutorial ? GAME_CONFIG.paintsPerStage : game.targetCount;
+  const visibleTime = tutorial ? GAME_CONFIG.stageDuration : game.remainingTime;
+  const visibleLives = tutorial ? GAME_CONFIG.initialLives : game.lives;
+  const visibleUmbrellas = tutorial ? tutorial.umbrellaCount : game.umbrellaCount;
+  const visibleFeverCards = tutorial ? tutorial.feverCardCount : game.feverCardCount;
+  stageNumber.textContent = String(visibleStage).padStart(2, "0");
   document.querySelector("#target-name").textContent = `${target.id} · ${target.name}`;
   targetSwatch.style.backgroundColor = target.hex;
-  collectedCount.textContent = String(game.collectedCount);
-  targetCount.textContent = String(game.targetCount);
-  remainingTime.textContent = formatTime(game.remainingTime);
-  remainingTime.classList.toggle("is-low", game.remainingTime <= 10);
-  livesDisplay.setAttribute("aria-label", `목숨 ${game.lives}개`);
-  hearts.forEach((heart, index) => heart.classList.toggle("is-lost", index >= game.lives));
-  umbrellaCount.textContent = String(game.umbrellaCount);
-  umbrellaDisplay.setAttribute("aria-label", `우산 ${game.umbrellaCount}개${game.umbrellaActive ? `, 활성 ${game.umbrellaRemainingTime.toFixed(1)}초` : ""}`);
+  collectedCount.textContent = String(visibleCollected);
+  targetCount.textContent = String(visibleTargetCount);
+  remainingTime.textContent = formatTime(visibleTime);
+  remainingTime.classList.toggle("is-low", visibleTime <= 10);
+  livesDisplay.setAttribute("aria-label", `목숨 ${visibleLives}개`);
+  hearts.forEach((heart, index) => heart.classList.toggle("is-lost", index >= visibleLives));
+  umbrellaCount.textContent = String(visibleUmbrellas);
+  umbrellaDisplay.setAttribute("aria-label", `우산 ${visibleUmbrellas}개${game.umbrellaActive ? `, 활성 ${game.umbrellaRemainingTime.toFixed(1)}초` : ""}`);
   umbrellaTimer.hidden = !game.umbrellaActive;
   umbrellaTimer.textContent = game.umbrellaActive ? `${game.umbrellaRemainingTime.toFixed(1)}s` : "";
   umbrellaDisplay.classList.toggle("is-active", game.umbrellaActive);
-  feverCardCount.textContent = String(game.feverCardCount);
-  feverCardDisplay.setAttribute("aria-label", `피버타임 카드 ${game.feverCardCount}장${game.feverActive ? `, 활성 ${game.feverRemainingTime.toFixed(1)}초` : ""}`);
+  feverCardCount.textContent = String(visibleFeverCards);
+  feverCardDisplay.setAttribute("aria-label", `피버타임 카드 ${visibleFeverCards}장${game.feverActive ? `, 활성 ${game.feverRemainingTime.toFixed(1)}초` : ""}`);
   feverTimer.hidden = !game.feverActive;
   feverTimer.textContent = game.feverActive ? `${game.feverRemainingTime.toFixed(1)}s` : "";
   feverCardDisplay.classList.toggle("is-active", game.feverActive);
   feverBanner.hidden = !game.feverActive;
   feverBannerTimer.textContent = game.feverActive ? `${game.feverRemainingTime.toFixed(1)}s` : "";
   canvas.parentElement.classList.toggle("fever-active", game.feverActive);
+  canvas.closest(".game-card").classList.toggle("fever-active", game.feverActive);
   feedback.textContent = game.statusMessage;
+  soundToggle.setAttribute("aria-pressed", String(sound.enabled));
+  soundToggle.setAttribute("aria-label", sound.enabled ? "사운드 끄기" : "사운드 켜기");
+  soundToggle.textContent = sound.enabled ? "♫ 사운드 켜짐" : "♫ 사운드 꺼짐";
+  tutorialPanel.hidden = !tutorial;
+  tutorialReplay.hidden = !["MENU", "GAME_OVER", "TIMEOUT"].includes(game.state);
+  if (tutorial) updateTutorialPanel(tutorial);
 
   if (displayedState !== game.state) {
     displayedState = game.state;
@@ -135,9 +226,10 @@ function syncUi() {
       statusDot.style.backgroundColor = "#ed6545";
     } else {
       overlay.classList.add("is-hidden");
-      gameStatus.textContent = "PLAYING";
+      gameStatus.textContent = game.state === "TUTORIAL" ? "TUTORIAL" : "PLAYING";
       statusDot.style.backgroundColor = "#76a877";
     }
+
   }
   if (game.state === "GAME_OVER" && game.paintExplosions.length === 0) {
     overlay.classList.remove("is-hidden");
@@ -156,7 +248,34 @@ function getCanvasX(event) {
   return event.clientX - bounds.left;
 }
 
+function playPendingSounds() {
+  if (game.state !== lastSoundGameState) {
+    sound.stopAll();
+    lastSoundGameState = game.state;
+  }
+  if (document.hidden || game.state === "PAUSED") {
+    sound.pauseMusic();
+  } else if (game.state === "PLAYING" || game.state === "TUTORIAL") {
+    sound.resumeMusic();
+    sound.setMusicMode(game.feverActive ? "fever" : "normal");
+  } else {
+    sound.stopMusic();
+  }
+  for (const soundEvent of game.takeSoundEvents()) sound.play(soundEvent);
+}
+
+function useUmbrella() {
+  game.useUmbrella();
+  playPendingSounds();
+}
+
+function useFever() {
+  game.useFever();
+  playPendingSounds();
+}
+
 startButton.addEventListener("click", () => {
+  sound.unlock();
   if (!assetsLoaded) return;
   if (game.state === "MENU") game.start();
   else if (game.state === "STAGE_CLEAR") game.nextStage();
@@ -166,13 +285,63 @@ startButton.addEventListener("click", () => {
   canvas.focus({ preventScroll: true });
 });
 
+function finishTutorial() {
+  if (!assetsLoaded || !game.tutorialActive) return;
+  saveTutorialCompletion();
+  sound.stopAll();
+  game.finishTutorial();
+  playPendingSounds();
+  syncUi();
+  canvas.focus({ preventScroll: true });
+}
+
+tutorialSkip.addEventListener("click", () => {
+  sound.unlock();
+  finishTutorial();
+});
+
+tutorialStart.addEventListener("click", () => {
+  sound.unlock();
+  finishTutorial();
+});
+
+tutorialReplay.addEventListener("click", () => {
+  sound.unlock();
+  if (!assetsLoaded || !["MENU", "GAME_OVER", "TIMEOUT"].includes(game.state)) return;
+  sound.stopAll();
+  game.startTutorial();
+  syncUi();
+});
+
+soundToggle.addEventListener("click", () => {
+  sound.toggle();
+  syncUi();
+});
+
+document.addEventListener("visibilitychange", () => {
+  if (document.hidden) {
+    sound.stopAll();
+    sound.pauseMusic();
+  } else {
+    sound.resumeIfNeeded();
+    if (game.state === "PLAYING" || game.state === "TUTORIAL") {
+      sound.resumeMusic();
+      sound.setMusicMode(game.feverActive ? "fever" : "normal");
+    }
+  }
+});
+
 startButton.disabled = true;
+tutorialReplay.disabled = true;
 overlayCopy.textContent = "물감 그림을 준비하고 있어요...";
 loadPaintSprites().then(({ sprites, failedCount }) => {
   renderer.setSprites(sprites);
   assetsLoaded = true;
   startButton.disabled = false;
+  tutorialReplay.disabled = false;
   overlayCopy.textContent = "목표 색 물감을 모아 스테이지를 클리어하세요.";
+  if (!hasCompletedTutorial()) game.startTutorial();
+  syncUi();
   if (failedCount > 0) {
     console.error(`${failedCount}개 물감 이미지 로드에 실패해 Canvas 도형으로 대신 표시합니다.`);
     feedback.textContent = "일부 물감 이미지를 불러오지 못해 기본 그림으로 표시합니다.";
@@ -186,9 +355,10 @@ let activeTouchPointer = null;
 let lastTapAt = null;
 
 function updateTouchControls() {
-  const supportsTouch = navigator.maxTouchPoints > 0
+  supportsTouchControls = navigator.maxTouchPoints > 0
     || window.matchMedia("(pointer: coarse)").matches;
-  document.body.classList.toggle("touch-controls", supportsTouch);
+  document.body.classList.toggle("touch-controls", supportsTouchControls);
+  syncUi();
 }
 
 const coarsePointerQuery = window.matchMedia("(pointer: coarse)");
@@ -206,12 +376,15 @@ canvas.addEventListener("pointermove", (event) => {
     }
     return;
   }
+  if (game.state === "TUTORIAL" && game.tutorial.step === 1
+    && event.movementX === 0 && event.movementY === 0) return;
   game.setPointerPosition(getCanvasX(event));
 });
 
 canvas.addEventListener("pointerdown", (event) => {
   if (event.pointerType === "touch") {
     event.preventDefault();
+    sound.unlock();
     if (activeTouchPointer) return;
     if (lastTapAt !== null && event.timeStamp - lastTapAt > maxTapDuration) lastTapAt = null;
     activeTouchPointer = {
@@ -223,6 +396,7 @@ canvas.addEventListener("pointerdown", (event) => {
     canvas.setPointerCapture(event.pointerId);
     return;
   }
+  sound.unlock();
   game.setPointerPosition(getCanvasX(event));
 });
 
@@ -239,18 +413,20 @@ canvas.addEventListener("pointerup", (event) => {
 
   if (isTap) {
     game.setPointerPosition(getCanvasX(event));
-    if (game.state === "PLAYING" && lastTapAt !== null && startTime - lastTapAt <= maxTapDuration) {
-      game.useFever();
+    const feverTutorialStep = game.state === "TUTORIAL" && game.tutorial?.step === 5;
+    const canUseFever = game.state === "PLAYING" || feverTutorialStep;
+    if (canUseFever && lastTapAt !== null && startTime - lastTapAt <= maxTapDuration) {
+      useFever();
       lastTapAt = null;
     } else {
-      lastTapAt = game.state === "PLAYING" ? event.timeStamp : null;
+      lastTapAt = canUseFever ? event.timeStamp : null;
     }
     return;
   }
 
   lastTapAt = null;
   if (deltaY <= -minSwipeUpDistance && Math.abs(deltaY) > Math.abs(deltaX)) {
-    game.useUmbrella();
+    useUmbrella();
   }
 });
 
@@ -265,10 +441,11 @@ window.addEventListener("keydown", (event) => {
     event.preventDefault();
   }
   if (event.repeat) return;
+  sound.unlock();
   if (event.key === "ArrowLeft") game.setDirection("left", true);
   if (event.key === "ArrowRight") game.setDirection("right", true);
-  if (event.code === "Space") game.useUmbrella();
-  if (event.key.toLowerCase() === "f") game.useFever();
+  if (event.code === "Space") useUmbrella();
+  if (event.key.toLowerCase() === "f") useFever();
 });
 
 window.addEventListener("keyup", (event) => {

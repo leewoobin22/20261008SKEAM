@@ -1,4 +1,4 @@
-import { COLORS, GAME_CONFIG, TARGET_COLOR_ID, UMBRELLA_REWARD_INTERVAL } from "./config.js";
+import { COLORS, GAME_CONFIG, SOUND_CONFIG, TARGET_COLOR_ID, UMBRELLA_REWARD_INTERVAL } from "./config.js";
 
 export class Game {
   constructor() {
@@ -7,6 +7,8 @@ export class Game {
     this.state = "MENU";
     this.stage = 1;
     this.fallSpeedMultiplier = GAME_CONFIG.fallSpeed.baseMultiplier;
+    this.tutorialActive = false;
+    this.tutorial = null;
     this.targetColor = COLORS.find((color) => color.id === TARGET_COLOR_ID);
     this.targetCount = GAME_CONFIG.paintsPerStage;
     this.collectedCount = 0;
@@ -22,6 +24,7 @@ export class Game {
     this.feverActive = false;
     this.feverRemainingTime = 0;
     this.feverParticles = [];
+    this.nextFeverParticleColor = 0;
     this.feverFlashRemaining = 0;
     this.feverTitleElapsed = 0;
     this.feverFadeRemaining = 0;
@@ -33,7 +36,11 @@ export class Game {
     this.perfectClear = false;
     this.stageClearRewardGranted = false;
     this.wrongCount = 0;
+    this.melodyIndex = 0;
+    this.lastCorrectCollectionTime = null;
+    this.gameplayTime = 0;
     this.statusMessage = "빨간 물감 5개를 모아 보세요!";
+    this.soundEvents = [];
     this.paints = [];
     this.nextPaintId = 1;
     this.spawnTimer = GAME_CONFIG.firstSpawnDelay;
@@ -61,10 +68,7 @@ export class Game {
 
   resetStage(feverCardCount = this.stageStartFeverCardCount) {
     this.state = "PLAYING";
-    this.fallSpeedMultiplier = Math.min(
-      GAME_CONFIG.fallSpeed.maxMultiplier,
-      GAME_CONFIG.fallSpeed.baseMultiplier + (this.stage - 1) * GAME_CONFIG.fallSpeed.stageStep
-    );
+    this.fallSpeedMultiplier = this.getStageFallSpeedMultiplier(this.stage);
     this.targetCount = this.stage * GAME_CONFIG.paintsPerStage;
     this.collectedCount = 0;
     this.lives = GAME_CONFIG.initialLives;
@@ -79,6 +83,7 @@ export class Game {
     this.feverActive = false;
     this.feverRemainingTime = 0;
     this.feverParticles = [];
+    this.nextFeverParticleColor = 0;
     this.feverFlashRemaining = 0;
     this.feverTitleElapsed = 0;
     this.feverFadeRemaining = 0;
@@ -88,6 +93,10 @@ export class Game {
     this.perfectClear = false;
     this.stageClearRewardGranted = false;
     this.wrongCount = 0;
+    this.melodyIndex = 0;
+    this.lastCorrectCollectionTime = null;
+    this.gameplayTime = 0;
+    this.soundEvents = [];
     this.paints = [];
     this.spawnTimer = GAME_CONFIG.firstSpawnDelay;
     this.timeSinceTargetSpawn = 0;
@@ -103,6 +112,258 @@ export class Game {
     this.statusMessage = `${this.targetColor.name} 물감 ${this.targetCount}개를 모아 보세요!`;
     this.player.x = this.width / 2;
     this.input.mouseX = this.player.x;
+  }
+
+  getStageSpeedMultiplier(stage) {
+    const { stageMultipliers, stageStep, maxMultiplier } = GAME_CONFIG.fallSpeed;
+    if (stage <= stageMultipliers.length) return stageMultipliers[Math.max(0, stage - 1)];
+    const lastListedMultiplier = stageMultipliers[stageMultipliers.length - 1];
+    return Math.min(maxMultiplier, lastListedMultiplier + (stage - stageMultipliers.length) * stageStep);
+  }
+
+  getStageFallSpeedMultiplier(stage) {
+    return GAME_CONFIG.fallSpeed.baseMultiplier * this.getStageSpeedMultiplier(stage);
+  }
+
+  startTutorial() {
+    if (this.state === "PLAYING" || this.state === "TUTORIAL") return false;
+    this.targetColor = COLORS.find((color) => color.id === TARGET_COLOR_ID);
+    this.tutorialActive = true;
+    this.tutorial = {
+      step: 1,
+      paints: [],
+      fallSpeedMultiplier: this.getStageFallSpeedMultiplier(1),
+      movementStartX: this.player.x || this.width / 2,
+      umbrellaCount: 0,
+      feverCardCount: 0,
+      retryDelay: 0,
+      spawnTimer: 0,
+      melodyIndex: 0,
+      lastCorrectCollectionTime: null
+    };
+    this.state = "TUTORIAL";
+    this.paints = [];
+    this.pendingPaintSpawns = [];
+    this.umbrellaActive = false;
+    this.umbrellaRemainingTime = 0;
+    this.umbrellaOpenElapsed = 0;
+    this.umbrellaImpacts = [];
+    this.feverActive = false;
+    this.feverRemainingTime = 0;
+    this.feverParticles = [];
+    this.feverFlashRemaining = 0;
+    this.feverTitleElapsed = GAME_CONFIG.feverVfx.titleDuration;
+    this.feverFadeRemaining = 0;
+    this.paintExplosions = [];
+    this.playerHitFlashRemaining = 0;
+    this.feedback = null;
+    this.soundEvents = [];
+    this.player.x = this.width / 2;
+    this.input.mouseX = this.player.x;
+    this.input.left = false;
+    this.input.right = false;
+    this.statusMessage = "튜토리얼 1 / 6 · 그릇을 움직여 보세요.";
+    return true;
+  }
+
+  finishTutorial() {
+    if (!this.tutorialActive) return false;
+    this.tutorialActive = false;
+    this.tutorial = null;
+    this.start();
+    return true;
+  }
+
+  advanceTutorial(step) {
+    if (!this.tutorialActive || !this.tutorial) return;
+    this.tutorial.step = step;
+    this.tutorial.paints = [];
+    this.tutorial.retryDelay = 0;
+    this.tutorial.spawnTimer = 0;
+    const stepMessages = {
+      2: "목표 색 물감을 그릇으로 받아보세요.",
+      3: "다른 색 물감이 바닥으로 떨어지도록 피해보세요.",
+      4: "우산을 사용해 오답 물감을 막아보세요.",
+      5: "피버카드를 사용해 목표 물감을 받아보세요.",
+      6: "튜토리얼을 마쳤어요. 게임을 시작할 준비가 됐어요."
+    };
+    this.statusMessage = `튜토리얼 ${step} / 6 · ${stepMessages[step]}`;
+    if (step === 2) {
+      this.spawnTutorialPaint(this.targetColor, this.player.x, -20, 0);
+    } else if (step === 3) {
+      this.spawnTutorialWrongPaint();
+    } else if (step === 4) {
+      this.tutorial.umbrellaCount = 1;
+      this.umbrellaActive = false;
+      this.umbrellaRemainingTime = 0;
+    } else if (step === 5) {
+      this.tutorial.feverCardCount = 1;
+    } else if (step === 6) {
+      this.feverActive = false;
+      this.feverRemainingTime = 0;
+      this.tutorial.paints = [];
+    }
+  }
+
+  spawnTutorialPaint(color, x, y, velocityY) {
+    if (!this.tutorial) return null;
+    const radius = randomBetween(GAME_CONFIG.paintRadius.min, GAME_CONFIG.paintRadius.max);
+    const paint = {
+      id: this.nextPaintId,
+      colorId: color.id,
+      displayColorId: color.id,
+      feverPaint: this.tutorial.step === 5,
+      feverSpeedMultiplier: this.tutorial.step === 5
+        ? GAME_CONFIG.fever.fallSpeedMultiplier * GAME_CONFIG.fever.fallSpeedAdjustment
+        : 1,
+      originalColorId: color.id,
+      x,
+      y,
+      velocityY,
+      previousY: y,
+      colorChangeTime: 0,
+      radius,
+      collisionProcessed: false,
+      animation: "fall",
+      animationElapsed: 0
+    };
+    this.nextPaintId += 1;
+    this.tutorial.paints.push(paint);
+    return paint;
+  }
+
+  spawnTutorialWrongPaint() {
+    const x = this.player.x < this.width / 2 ? this.width * 0.76 : this.width * 0.24;
+    const wrongColor = COLORS.find((color) => color.id !== this.targetColor.id);
+    this.spawnTutorialPaint(wrongColor, x, -20, 70);
+  }
+
+  updateTutorial(deltaTime) {
+    if (!this.tutorial) return;
+    const tutorial = this.tutorial;
+    this.updatePaintExplosions(deltaTime);
+    this.updateFeverVisuals(deltaTime);
+    const previousPlayerX = this.player.x;
+    this.updatePlayer(deltaTime);
+
+    if (tutorial.step === 1 && Math.abs(this.player.x - tutorial.movementStartX) >= 24) {
+      this.advanceTutorial(2);
+    }
+
+    if (tutorial.retryDelay > 0) {
+      tutorial.retryDelay = Math.max(0, tutorial.retryDelay - deltaTime);
+      if (tutorial.retryDelay === 0) {
+        if (tutorial.step === 3) this.spawnTutorialWrongPaint();
+        if (tutorial.step === 4 && !this.umbrellaActive) {
+          tutorial.umbrellaCount = 1;
+          this.spawnTutorialPaint(
+            COLORS.find((color) => color.id !== this.targetColor.id),
+            this.player.x,
+            -20,
+            70
+          );
+        }
+      }
+    }
+
+    if (tutorial.step === 5 && this.feverActive) {
+      this.feverRemainingTime = Math.max(0, this.feverRemainingTime - deltaTime);
+      tutorial.spawnTimer -= deltaTime;
+      if (tutorial.spawnTimer <= 0 && tutorial.paints.length < 6) {
+        this.spawnTutorialPaint(this.targetColor, randomBetween(35, this.width - 35), -20, 90);
+        tutorial.spawnTimer += 0.36;
+      }
+      if (this.feverRemainingTime <= 0) {
+        this.feverActive = false;
+        this.feverFadeRemaining = GAME_CONFIG.feverVfx.fadeDuration;
+        this.advanceTutorial(6);
+      }
+    }
+
+    for (let index = tutorial.paints.length - 1; index >= 0; index -= 1) {
+      const paint = tutorial.paints[index];
+      if (paint.animation === "splash") {
+        paint.animationElapsed += deltaTime;
+        if (paint.animationElapsed >= GAME_CONFIG.paintFrameCount / GAME_CONFIG.splashAnimationFps) {
+          tutorial.paints.splice(index, 1);
+        }
+        continue;
+      }
+      paint.previousY = paint.y;
+      paint.animationElapsed += deltaTime;
+      const speedMultiplier = tutorial.fallSpeedMultiplier * (paint.feverSpeedMultiplier || 1);
+      paint.velocityY += GAME_CONFIG.gravity * speedMultiplier * deltaTime;
+      paint.y += paint.velocityY * deltaTime;
+
+      if (this.umbrellaActive && tutorial.step === 4) {
+        const umbrellaHit = this.findUmbrellaCollision(paint, previousPlayerX);
+        if (umbrellaHit) {
+          paint.animation = "splash";
+          paint.animationElapsed = 0;
+          paint.x = umbrellaHit.x;
+          paint.y = umbrellaHit.y - paint.radius;
+          this.umbrellaImpacts.push({ x: umbrellaHit.x, y: umbrellaHit.y, colorId: paint.colorId, time: 0.32 });
+          this.soundEvents.push({ name: "umbrellaBlock" });
+          this.umbrellaActive = false;
+          this.umbrellaRemainingTime = 0;
+          this.advanceTutorial(5);
+          break;
+        }
+      }
+
+      if (this.collidesWithPlayer(paint)) {
+        paint.collisionProcessed = true;
+        if (tutorial.step === 2 && paint.colorId === this.targetColor.id) {
+          this.soundEvents.push({ name: "paintCollect", noteIndex: 0, fever: false });
+          this.advanceTutorial(3);
+          break;
+        }
+        if (tutorial.step === 5 && paint.colorId === this.targetColor.id) {
+          const continuingMelody = tutorial.lastCorrectCollectionTime !== null
+            && this.effectTime - tutorial.lastCorrectCollectionTime <= SOUND_CONFIG.melody.continuationWindow;
+          if (!continuingMelody) tutorial.melodyIndex = 0;
+          this.soundEvents.push({ name: "paintCollect", noteIndex: tutorial.melodyIndex, fever: true });
+          tutorial.melodyIndex = (tutorial.melodyIndex + 1) % SOUND_CONFIG.melody.frequencies.length;
+          tutorial.lastCorrectCollectionTime = this.effectTime;
+          paint.animation = "splash";
+          paint.animationElapsed = 0;
+          continue;
+        }
+        if (tutorial.step === 3 || tutorial.step === 4) {
+          paint.animation = "splash";
+          paint.animationElapsed = 0;
+          this.soundEvents.push({ name: "paintSplash" });
+          this.statusMessage = tutorial.step === 3
+            ? "앗, 다시 피해보세요. 생명은 줄지 않아요!"
+            : "우산이 열리기 전에 닿았어요. 다시 사용해보세요.";
+          this.umbrellaActive = false;
+          this.umbrellaRemainingTime = 0;
+          tutorial.retryDelay = 0.8;
+          continue;
+        }
+      }
+
+      if (paint.y - paint.radius > this.height) {
+        tutorial.paints.splice(index, 1);
+        if (tutorial.step === 3) {
+          this.advanceTutorial(4);
+          break;
+        } else if (tutorial.step === 4 && this.umbrellaActive) {
+          this.umbrellaActive = false;
+          this.umbrellaRemainingTime = 0;
+          tutorial.umbrellaCount = 1;
+          tutorial.retryDelay = 0.8;
+        }
+      }
+    }
+
+    if (this.umbrellaActive) {
+      this.umbrellaOpenElapsed = Math.min(
+        GAME_CONFIG.umbrellaOpenDuration,
+        this.umbrellaOpenElapsed + deltaTime
+      );
+      this.umbrellaRemainingTime = Math.max(0, this.umbrellaRemainingTime - deltaTime);
+    }
   }
 
   nextStage() {
@@ -134,12 +395,30 @@ export class Game {
   }
 
   useUmbrella() {
+    if (this.tutorialActive && this.tutorial?.step === 4) {
+      if (this.tutorial.umbrellaCount < 1 || this.umbrellaActive) return false;
+      this.tutorial.umbrellaCount -= 1;
+      this.umbrellaActive = true;
+      this.umbrellaRemainingTime = GAME_CONFIG.umbrellaDuration;
+      this.umbrellaOpenElapsed = 0;
+      this.soundEvents.push({ name: "umbrella" });
+      this.tutorial.paints = [];
+      this.spawnTutorialPaint(
+        COLORS.find((color) => color.id !== this.targetColor.id),
+        this.player.x,
+        this.player.y - 120,
+        90
+      );
+      this.statusMessage = "우산이 펼쳐졌어요. 오답 물감을 막아보세요!";
+      return true;
+    }
     if (this.state !== "PLAYING" || this.umbrellaActive || this.umbrellaCount < 1) return false;
     this.umbrellaCount -= 1;
     this.umbrellaActive = true;
     this.umbrellaRemainingTime = GAME_CONFIG.umbrellaDuration;
     this.umbrellaOpenElapsed = 0;
     this.statusMessage = "우산이 펼쳐졌어요. 오답 물감을 막아 줍니다!";
+    this.soundEvents.push({ name: "umbrella" });
     this.feedback = {
       text: "우산 방어!",
       color: "#438bd1",
@@ -151,6 +430,23 @@ export class Game {
   }
 
   useFever() {
+    if (this.tutorialActive && this.tutorial?.step === 5) {
+      if (this.tutorial.feverCardCount < 1 || this.feverActive) return false;
+      this.tutorial.feverCardCount -= 1;
+      this.feverActive = true;
+      this.feverRemainingTime = GAME_CONFIG.feverDuration;
+      this.feverFlashRemaining = GAME_CONFIG.feverVfx.flashDuration;
+      this.feverTitleElapsed = 0;
+      this.feverFadeRemaining = 0;
+      this.feverFadeColor = this.targetColor.hex;
+      this.feverParticles = [];
+      this.nextFeverParticleColor = 0;
+      this.spawnFeverParticles(this.width / 2, this.height / 2, GAME_CONFIG.feverVfx.startParticleCount);
+      this.tutorial.spawnTimer = 0.05;
+      this.soundEvents.push({ name: "fever" });
+      this.statusMessage = "피버타임! 목표 색 물감이 빠르게 내려와요.";
+      return true;
+    }
     if (this.state !== "PLAYING" || this.feverActive || this.feverCardCount < 1) return false;
     this.feverCardCount -= 1;
     this.feverActive = true;
@@ -160,14 +456,21 @@ export class Game {
     this.feverFadeRemaining = 0;
     this.feverFadeColor = this.targetColor.hex;
     this.feverParticles = [];
-    this.spawnFeverParticles(this.width / 2, this.height / 2, GAME_CONFIG.feverVfx.maxParticles);
+    this.nextFeverParticleColor = 0;
+    this.spawnFeverParticles(this.width / 2, this.height / 2, GAME_CONFIG.feverVfx.startParticleCount);
     for (const paint of this.paints) {
       if (!paint.collisionProcessed && paint.animation !== "splash") {
         paint.colorId = this.targetColor.id;
+        paint.displayColorId = this.targetColor.id;
+        paint.feverPaint = true;
+        paint.feverSpeedMultiplier = GAME_CONFIG.fever.fallSpeedMultiplier
+          * GAME_CONFIG.fever.fallSpeedAdjustment;
+        paint.velocityY *= paint.feverSpeedMultiplier;
         paint.colorChangeTime = 0.45;
       }
     }
     this.statusMessage = "FEVER TIME! 화면의 물감이 목표 색으로 바뀌었어요.";
+    this.soundEvents.push({ name: "fever" });
     this.feedback = {
       text: "FEVER TIME!",
       color: this.targetColor.hex,
@@ -180,6 +483,10 @@ export class Game {
 
   update(deltaTime) {
     if (this.state === "PAUSED") return;
+    if (this.state === "TUTORIAL") {
+      this.updateTutorial(deltaTime);
+      return;
+    }
     if (this.state !== "PLAYING") {
       this.updatePaintExplosions(deltaTime);
       this.updateSplashAnimations(deltaTime);
@@ -188,6 +495,12 @@ export class Game {
     if (this.width <= 0 || this.height <= 0) return;
 
     const activeDelta = Math.min(deltaTime, this.remainingTime);
+    this.gameplayTime += activeDelta;
+    if (this.lastCorrectCollectionTime !== null
+      && this.gameplayTime - this.lastCorrectCollectionTime > SOUND_CONFIG.melody.continuationWindow) {
+      this.melodyIndex = 0;
+      this.lastCorrectCollectionTime = null;
+    }
     this.updatePaintExplosions(activeDelta);
     this.timeSinceTargetSpawn += activeDelta;
     const previousPlayerX = this.player.x;
@@ -198,21 +511,32 @@ export class Game {
         this.umbrellaOpenElapsed + activeDelta
       );
     }
-    this.spawnTimer -= activeDelta;
+    const spawnRateMultiplier = this.feverActive
+      ? GAME_CONFIG.fever.spawnMultiplier * GAME_CONFIG.fever.spawnRateAdjustment
+      : 1;
+    this.spawnTimer -= activeDelta * spawnRateMultiplier;
     let batchStarted = false;
     while (this.spawnTimer <= 0) {
       if (this.pendingPaintSpawns.length === 0) {
         this.queuePaintBatch();
         batchStarted = true;
+      } else if (this.feverActive) {
+        this.pendingPaintSpawns.push(...this.preparePaintBatch());
       }
       this.spawnTimer += GAME_CONFIG.spawnInterval;
     }
     if (this.pendingPaintSpawns.length > 0) {
       if (!batchStarted) this.spawnSequenceTimer -= activeDelta;
       while (this.pendingPaintSpawns.length > 0 && this.spawnSequenceTimer <= 1e-9) {
+        const maxActivePaints = this.feverActive ? GAME_CONFIG.fever.maxActivePaints : Infinity;
+        if (this.paints.length >= maxActivePaints) {
+          this.pendingPaintSpawns = [];
+          break;
+        }
         const pendingPaint = this.pendingPaintSpawns.shift();
-        const color = this.feverActive ? this.targetColor : pendingPaint.color;
-        this.createPaint(color, pendingPaint.x, pendingPaint.color.id);
+        const feverPaint = this.feverActive;
+        const color = feverPaint ? this.targetColor : pendingPaint.color;
+        this.createPaint(color, pendingPaint.x, color.id, color, feverPaint);
         this.spawnSequenceTimer += GAME_CONFIG.paintSpawn.sequenceInterval;
       }
     }
@@ -230,7 +554,8 @@ export class Game {
       paint.previousY = paint.y;
       paint.colorChangeTime = Math.max(0, (paint.colorChangeTime || 0) - activeDelta);
       paint.animationElapsed += activeDelta;
-      paint.velocityY += GAME_CONFIG.gravity * this.fallSpeedMultiplier * activeDelta;
+      paint.velocityY += GAME_CONFIG.gravity * this.fallSpeedMultiplier
+        * (paint.feverSpeedMultiplier || 1) * activeDelta;
       paint.y += paint.velocityY * activeDelta;
 
       if (this.umbrellaActive && paint.colorId !== this.targetColor.id) {
@@ -248,6 +573,7 @@ export class Game {
             time: 0.32
           });
           if (this.umbrellaImpacts.length > 8) this.umbrellaImpacts.shift();
+          this.soundEvents.push({ name: "umbrellaBlock" });
           this.feedback = {
             text: "우산으로 막았어요!",
             color: "#438bd1",
@@ -262,7 +588,6 @@ export class Game {
 
       if (this.collidesWithPlayer(paint)) {
         if (!paint.collisionProcessed) {
-          paint.collisionProcessed = true;
           paint.animation = "splash";
           paint.animationElapsed = 0;
           this.resolveCollision(paint);
@@ -294,11 +619,14 @@ export class Game {
     }
     this.updateFeverVisuals(activeDelta);
     if (this.feverActive) {
+      const feverTimeBeforeUpdate = this.feverRemainingTime;
       this.feverRemainingTime = Math.max(0, this.feverRemainingTime - activeDelta);
       if (this.feverRemainingTime <= 1e-9) {
         this.feverActive = false;
         this.feverRemainingTime = 0;
-        this.feverFadeRemaining = GAME_CONFIG.feverVfx.fadeDuration;
+        this.feverFadeRemaining = Math.min(GAME_CONFIG.feverVfx.fadeDuration, feverTimeBeforeUpdate);
+        this.pendingPaintSpawns = [];
+        this.spawnSequenceTimer = 0;
         this.statusMessage = "피버타임이 끝났어요. 바뀐 물감 색은 유지됩니다.";
       }
     }
@@ -329,7 +657,17 @@ export class Game {
 
   spawnPaintBatch(forcedCount = null) {
     return this.preparePaintBatch(forcedCount)
-      .map(({ color, x }) => this.createPaint(color, x));
+      .map(({ color, x }) => {
+        const feverPaint = this.feverActive;
+        const visualColor = feverPaint ? this.targetColor : color;
+        return this.createPaint(
+          feverPaint ? this.targetColor : color,
+          x,
+          color.id,
+          visualColor,
+          feverPaint
+        );
+      });
   }
 
   queuePaintBatch() {
@@ -339,11 +677,14 @@ export class Game {
 
   preparePaintBatch(forcedCount = null) {
     const count = forcedCount ?? this.choosePaintBatchSize();
+    const positions = this.choosePaintPositions(count);
+    if (this.feverActive) {
+      return positions.map((x) => ({ color: this.targetColor, x }));
+    }
     const targetChance = this.getTargetColorChance();
     const guaranteeTarget = !this.feverActive
       && this.timeSinceTargetSpawn >= GAME_CONFIG.paintSpawn.targetGuaranteeInterval;
     const colors = this.choosePaintColors(count, targetChance, guaranteeTarget);
-    const positions = this.choosePaintPositions(count);
     return colors.map((color, index) => ({ color, x: positions[index] }));
   }
 
@@ -358,9 +699,15 @@ export class Game {
     let cumulativeWeight = 0;
     for (let index = 0; index < weights.length; index += 1) {
       cumulativeWeight += weights[index];
-      if (roll < cumulativeWeight) return settings.minBatchSize + index;
+      if (roll < cumulativeWeight) return this.getFeverBatchSize(settings.minBatchSize + index);
     }
-    return settings.maxBatchSize;
+    return this.getFeverBatchSize(settings.maxBatchSize);
+  }
+
+  getFeverBatchSize(batchSize) {
+    return this.feverActive
+      ? Math.min(GAME_CONFIG.fever.maxBatchSize, batchSize * GAME_CONFIG.fever.spawnMultiplier)
+      : batchSize;
   }
 
   getTargetColorChance() {
@@ -405,16 +752,24 @@ export class Game {
     return positions;
   }
 
-  createPaint(color, x, originalColorId = color.id) {
+  createPaint(color, x, originalColorId = color.id, displayColor = color, feverPaint = this.feverActive) {
     const radius = randomBetween(GAME_CONFIG.paintRadius.min, GAME_CONFIG.paintRadius.max);
     const paint = {
       id: this.nextPaintId,
       colorId: color.id,
+      displayColorId: displayColor.id,
+      feverPaint,
+      feverSpeedMultiplier: feverPaint
+        ? GAME_CONFIG.fever.fallSpeedMultiplier * GAME_CONFIG.fever.fallSpeedAdjustment
+        : 1,
       originalColorId,
       x,
       y: -radius,
       velocityY: randomBetween(GAME_CONFIG.initialFallSpeed.min, GAME_CONFIG.initialFallSpeed.max)
-        * this.fallSpeedMultiplier,
+        * this.fallSpeedMultiplier
+        * (feverPaint
+          ? GAME_CONFIG.fever.fallSpeedMultiplier * GAME_CONFIG.fever.fallSpeedAdjustment
+          : 1),
       previousY: -radius,
       colorChangeTime: this.feverActive ? 0.45 : 0,
       radius,
@@ -433,7 +788,7 @@ export class Game {
     const openingHalfWidth = this.player.width / 2 - 11;
     const withinOpening = Math.abs(paint.x - this.player.x) <= openingHalfWidth + paint.radius * 0.35;
     const crossingRim = paint.y + paint.radius >= this.player.y
-      && paint.y - paint.radius <= this.player.y + 10;
+      && paint.previousY - paint.radius <= this.player.y + 10;
     return withinOpening && crossingRim;
   }
 
@@ -505,9 +860,16 @@ export class Game {
           GAME_CONFIG.feverVfx.particleLifetime.max
         ),
         elapsed: 0,
-        color: this.targetColor.hex
+        color: COLORS[this.nextFeverParticleColor % COLORS.length].hex
       });
+      this.nextFeverParticleColor += 1;
     }
+  }
+
+  getFeverVisualStrength() {
+    return this.feverActive
+      ? Math.min(1, this.feverRemainingTime / GAME_CONFIG.feverVfx.fadeDuration)
+      : this.feverFadeRemaining / GAME_CONFIG.feverVfx.fadeDuration;
   }
 
   updateFeverVisuals(deltaTime) {
@@ -531,8 +893,14 @@ export class Game {
   }
 
   resolveCollision(paint) {
+    if (paint.collisionProcessed) return;
+    paint.collisionProcessed = true;
     const correct = paint.colorId === this.targetColor.id;
     if (correct) {
+      const continuingMelody = this.lastCorrectCollectionTime !== null
+        && this.gameplayTime - this.lastCorrectCollectionTime <= SOUND_CONFIG.melody.continuationWindow;
+      this.melodyIndex = continuingMelody ? (this.melodyIndex + 1) % SOUND_CONFIG.melody.frequencies.length : 0;
+      this.lastCorrectCollectionTime = this.gameplayTime;
       this.collectedCount += 1;
       this.umbrellaRewardCounter += 1;
       const umbrellaRewarded = this.umbrellaRewardCounter % UMBRELLA_REWARD_INTERVAL === 0
@@ -550,12 +918,21 @@ export class Game {
         y: this.player.y - 12,
         time: 0.9
       };
+      if (this.feverActive) {
+        this.spawnFeverParticles(paint.x, paint.y, GAME_CONFIG.feverVfx.collectParticleCount);
+      }
+      this.soundEvents.push({
+        name: "paintCollect",
+        noteIndex: this.melodyIndex,
+        fever: this.feverActive
+      });
       if (this.collectedCount >= this.targetCount) {
         this.finishStage("STAGE_CLEAR");
       }
     } else {
       const color = COLORS.find((item) => item.id === paint.colorId);
       if (this.umbrellaActive) {
+        this.soundEvents.push({ name: "umbrellaBlock" });
         this.feedback = {
           text: "우산으로 막았어요!",
           color: "#438bd1",
@@ -565,6 +942,8 @@ export class Game {
         };
         this.statusMessage = `${color.name} 물감을 우산으로 막았어요!`;
       } else {
+        this.melodyIndex = 0;
+        this.lastCorrectCollectionTime = null;
         this.createPaintExplosion(paint, color);
         this.wrongCount += 1;
         this.lives = Math.max(0, this.lives - 1);
@@ -580,6 +959,8 @@ export class Game {
           : `${color.name}은(는) 목표 색이 아니에요.`;
         if (this.lives === 0) {
           this.finishStage("GAME_OVER");
+        } else {
+          this.soundEvents.push({ name: "paintSplash" });
         }
       }
     }
@@ -631,6 +1012,18 @@ export class Game {
   finishStage(state) {
     if (this.state !== "PLAYING") return;
     this.state = state;
+    if (state === "STAGE_CLEAR") {
+      const lastCollectionSound = [...this.soundEvents].reverse()
+        .find((event) => event.name === "paintCollect");
+      this.soundEvents = [
+        ...(lastCollectionSound ? [lastCollectionSound] : []),
+        { name: "stageClear" }
+      ];
+    } else if (state === "GAME_OVER") {
+      this.soundEvents = [{ name: "gameOver" }];
+    } else {
+      this.soundEvents = [];
+    }
     this.umbrellaCount = 0;
     this.umbrellaActive = false;
     this.umbrellaRemainingTime = 0;
@@ -646,6 +1039,7 @@ export class Game {
       this.paintExplosions = [];
       this.playerHitFlashRemaining = 0;
     }
+
     this.paints = this.paints.filter((paint) => paint.animation === "splash");
     this.spawnTimer = GAME_CONFIG.firstSpawnDelay;
     if (state === "STAGE_CLEAR") {
@@ -663,6 +1057,10 @@ export class Game {
     } else if (state === "GAME_OVER") {
       this.statusMessage = "목숨을 모두 잃었어요. 다시 시작해 보세요.";
     }
+  }
+
+  takeSoundEvents() {
+    return this.soundEvents.splice(0);
   }
 
   updateSplashAnimations(deltaTime) {
