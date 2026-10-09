@@ -34,6 +34,7 @@ export class Game {
     this.stageClearRewardGranted = false;
     this.wrongCount = 0;
     this.statusMessage = "빨간 물감 5개를 모아 보세요!";
+    this.soundEvents = [];
     this.paints = [];
     this.nextPaintId = 1;
     this.spawnTimer = GAME_CONFIG.firstSpawnDelay;
@@ -140,6 +141,7 @@ export class Game {
     this.umbrellaRemainingTime = GAME_CONFIG.umbrellaDuration;
     this.umbrellaOpenElapsed = 0;
     this.statusMessage = "우산이 펼쳐졌어요. 오답 물감을 막아 줍니다!";
+    this.soundEvents.push("umbrella");
     this.feedback = {
       text: "우산 방어!",
       color: "#438bd1",
@@ -168,6 +170,7 @@ export class Game {
       }
     }
     this.statusMessage = "FEVER TIME! 화면의 물감이 목표 색으로 바뀌었어요.";
+    this.soundEvents.push("fever");
     this.feedback = {
       text: "FEVER TIME!",
       color: this.targetColor.hex,
@@ -248,6 +251,7 @@ export class Game {
             time: 0.32
           });
           if (this.umbrellaImpacts.length > 8) this.umbrellaImpacts.shift();
+          this.soundEvents.push("umbrellaBlock");
           this.feedback = {
             text: "우산으로 막았어요!",
             color: "#438bd1",
@@ -552,10 +556,13 @@ export class Game {
       };
       if (this.collectedCount >= this.targetCount) {
         this.finishStage("STAGE_CLEAR");
+      } else {
+        this.soundEvents.push("paintCollect");
       }
     } else {
       const color = COLORS.find((item) => item.id === paint.colorId);
       if (this.umbrellaActive) {
+        this.soundEvents.push("umbrellaBlock");
         this.feedback = {
           text: "우산으로 막았어요!",
           color: "#438bd1",
@@ -580,6 +587,8 @@ export class Game {
           : `${color.name}은(는) 목표 색이 아니에요.`;
         if (this.lives === 0) {
           this.finishStage("GAME_OVER");
+        } else {
+          this.soundEvents.push("paintSplash");
         }
       }
     }
@@ -631,6 +640,11 @@ export class Game {
   finishStage(state) {
     if (this.state !== "PLAYING") return;
     this.state = state;
+    this.soundEvents = state === "STAGE_CLEAR"
+      ? ["stageClear"]
+      : state === "GAME_OVER"
+        ? ["gameOver"]
+        : [];
     this.umbrellaCount = 0;
     this.umbrellaActive = false;
     this.umbrellaRemainingTime = 0;
@@ -646,6 +660,7 @@ export class Game {
       this.paintExplosions = [];
       this.playerHitFlashRemaining = 0;
     }
+
     this.paints = this.paints.filter((paint) => paint.animation === "splash");
     this.spawnTimer = GAME_CONFIG.firstSpawnDelay;
     if (state === "STAGE_CLEAR") {
@@ -663,6 +678,10 @@ export class Game {
     } else if (state === "GAME_OVER") {
       this.statusMessage = "목숨을 모두 잃었어요. 다시 시작해 보세요.";
     }
+  }
+
+  takeSoundEvents() {
+    return this.soundEvents.splice(0);
   }
 
   updateSplashAnimations(deltaTime) {

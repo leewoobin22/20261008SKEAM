@@ -1,6 +1,7 @@
 import { COLORS, GAME_CONFIG } from "./config.js";
 import { Game } from "./game.js";
 import { loadPaintSprites, Renderer } from "./renderer.js";
+import { Sound } from "./sound.js";
 
 const canvas = document.querySelector("#game-canvas");
 const overlay = document.querySelector("#start-overlay");
@@ -27,8 +28,10 @@ const feverCardCount = document.querySelector("#fever-card-count");
 const feverTimer = document.querySelector("#fever-timer");
 const feverBanner = document.querySelector("#fever-banner");
 const feverBannerTimer = document.querySelector("#fever-banner-timer");
+const soundToggle = document.querySelector("#sound-toggle");
 const game = new Game();
 const renderer = new Renderer(canvas);
+const sound = new Sound();
 let previousTime = 0;
 let displayedState = null;
 let assetsLoaded = false;
@@ -76,6 +79,7 @@ function frame(timestamp) {
   const elapsed = previousTime === 0 ? 0 : (timestamp - previousTime) / 1000;
   previousTime = timestamp;
   game.update(Math.min(elapsed, GAME_CONFIG.maxDeltaTime));
+  playPendingSounds();
   syncUi();
   renderer.render(game);
   requestAnimationFrame(frame);
@@ -106,6 +110,9 @@ function syncUi() {
   feverBannerTimer.textContent = game.feverActive ? `${game.feverRemainingTime.toFixed(1)}s` : "";
   canvas.parentElement.classList.toggle("fever-active", game.feverActive);
   feedback.textContent = game.statusMessage;
+  soundToggle.setAttribute("aria-pressed", String(sound.enabled));
+  soundToggle.setAttribute("aria-label", "효과음");
+  soundToggle.textContent = sound.enabled ? "♫ 사운드 켜짐" : "♫ 사운드 꺼짐";
 
   if (displayedState !== game.state) {
     displayedState = game.state;
@@ -156,7 +163,22 @@ function getCanvasX(event) {
   return event.clientX - bounds.left;
 }
 
+function playPendingSounds() {
+  for (const soundName of game.takeSoundEvents()) sound.play(soundName);
+}
+
+function useUmbrella() {
+  game.useUmbrella();
+  playPendingSounds();
+}
+
+function useFever() {
+  game.useFever();
+  playPendingSounds();
+}
+
 startButton.addEventListener("click", () => {
+  sound.unlock();
   if (!assetsLoaded) return;
   if (game.state === "MENU") game.start();
   else if (game.state === "STAGE_CLEAR") game.nextStage();
@@ -164,6 +186,15 @@ startButton.addEventListener("click", () => {
   else if (game.state === "GAME_OVER") game.restartGame();
   syncUi();
   canvas.focus({ preventScroll: true });
+});
+
+soundToggle.addEventListener("click", () => {
+  sound.toggle();
+  syncUi();
+});
+
+document.addEventListener("visibilitychange", () => {
+  if (!document.hidden) sound.resumeIfNeeded();
 });
 
 startButton.disabled = true;
@@ -212,6 +243,7 @@ canvas.addEventListener("pointermove", (event) => {
 canvas.addEventListener("pointerdown", (event) => {
   if (event.pointerType === "touch") {
     event.preventDefault();
+    sound.unlock();
     if (activeTouchPointer) return;
     if (lastTapAt !== null && event.timeStamp - lastTapAt > maxTapDuration) lastTapAt = null;
     activeTouchPointer = {
@@ -240,7 +272,7 @@ canvas.addEventListener("pointerup", (event) => {
   if (isTap) {
     game.setPointerPosition(getCanvasX(event));
     if (game.state === "PLAYING" && lastTapAt !== null && startTime - lastTapAt <= maxTapDuration) {
-      game.useFever();
+      useFever();
       lastTapAt = null;
     } else {
       lastTapAt = game.state === "PLAYING" ? event.timeStamp : null;
@@ -250,7 +282,7 @@ canvas.addEventListener("pointerup", (event) => {
 
   lastTapAt = null;
   if (deltaY <= -minSwipeUpDistance && Math.abs(deltaY) > Math.abs(deltaX)) {
-    game.useUmbrella();
+    useUmbrella();
   }
 });
 
@@ -265,10 +297,11 @@ window.addEventListener("keydown", (event) => {
     event.preventDefault();
   }
   if (event.repeat) return;
+  sound.unlock();
   if (event.key === "ArrowLeft") game.setDirection("left", true);
   if (event.key === "ArrowRight") game.setDirection("right", true);
-  if (event.code === "Space") game.useUmbrella();
-  if (event.key.toLowerCase() === "f") game.useFever();
+  if (event.code === "Space") useUmbrella();
+  if (event.key.toLowerCase() === "f") useFever();
 });
 
 window.addEventListener("keyup", (event) => {

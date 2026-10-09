@@ -10,6 +10,11 @@ export const COLORS = [
 
 export const TARGET_COLOR_ID = "RED";
 export const UMBRELLA_REWARD_INTERVAL = 3;
+export const SOUND_CONFIG = {
+  muteStorageKey: "paint-catcher-muted",
+  masterVolume: 0.18,
+  maxConcurrentEffects: 4
+};
 
 export const GAME_CONFIG = {
   gravity: 520,

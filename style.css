@@ -452,6 +452,20 @@ canvas {
   font-size: 11px;
 }
 
+.sound-toggle {
+  flex: 0 0 auto;
+  padding: 6px 9px;
+  border: 1px solid #e3ddd1;
+  border-radius: 6px;
+  color: #555148;
+  background: #fffefa;
+  cursor: pointer;
+  font-size: 10px;
+}
+
+.sound-toggle:hover { border-color: #cfc5b5; }
+.sound-toggle:focus-visible { outline: 2px solid var(--orange); outline-offset: 2px; }
+
 .keycap {
   min-width: 19px;
   height: 19px;
