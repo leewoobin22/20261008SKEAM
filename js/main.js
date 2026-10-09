@@ -38,14 +38,28 @@ const tutorialAction = document.querySelector("#tutorial-action");
 const tutorialRules = document.querySelector("#tutorial-rules");
 const tutorialStart = document.querySelector("#tutorial-start");
 const tutorialReplay = document.querySelector("#tutorial-replay");
+const helpButton = document.querySelector("#help-button");
+const helpDialog = document.querySelector("#help-dialog");
+const helpClose = document.querySelector("#help-close");
+const helpTutorial = document.querySelector("#help-tutorial");
+const debugPanel = document.querySelector("#debug-panel");
+const debugEnabled = new URLSearchParams(window.location.search).get("debug") === "1";
+if (debugPanel) debugPanel.hidden = !debugEnabled;
 const game = new Game();
 const renderer = new Renderer(canvas);
 const sound = new Sound();
 let previousTime = 0;
+let averageFrameDuration = 0;
+let frameRequestId = null;
 let displayedState = null;
 let lastSoundGameState = game.state;
 let assetsLoaded = false;
 let supportsTouchControls = false;
+let helpPausedState = null;
+let lastTouchInputAt = null;
+let activeTouchPointer = null;
+let lastTapAt = null;
+const activePointerIds = new Set();
 
 function hasCompletedTutorial() {
   try {
@@ -103,14 +117,53 @@ function resizeCanvas() {
   renderer.render(game);
 }
 
+function scheduleFrame() {
+  if (frameRequestId !== null) return;
+  frameRequestId = requestAnimationFrame((timestamp) => {
+    frameRequestId = null;
+    frame(timestamp);
+  });
+}
+
 function frame(timestamp) {
-  const elapsed = previousTime === 0 ? 0 : (timestamp - previousTime) / 1000;
+  const frameDuration = previousTime === 0 ? 0 : timestamp - previousTime;
+  const elapsed = frameDuration / 1000;
   previousTime = timestamp;
+  if (frameDuration > 0) {
+    averageFrameDuration = averageFrameDuration === 0
+      ? frameDuration
+      : averageFrameDuration * 0.9 + frameDuration * 0.1;
+  }
   game.update(Math.min(elapsed, GAME_CONFIG.maxDeltaTime));
   playPendingSounds();
   syncUi();
   renderer.render(game);
-  requestAnimationFrame(frame);
+  scheduleFrame();
+  syncDebugPanel(frameDuration);
+}
+
+function syncDebugPanel(frameDuration) {
+  if (!debugEnabled || !debugPanel) return;
+  const particles = game.feverParticles.length + game.paintExplosions
+    .reduce((count, explosion) => count + explosion.particles.length, 0);
+  const activePaints = game.tutorialActive ? game.tutorial?.paints.length ?? 0 : game.paints.length;
+  const lastTouch = lastTouchInputAt === null
+    ? "never"
+    : `${Math.round(performance.now() - lastTouchInputAt)} ms ago`;
+  const targetX = Number.isFinite(game.input.mouseX) ? game.input.mouseX.toFixed(1) : "n/a";
+  const bowlX = Number.isFinite(game.player.x) ? game.player.x.toFixed(1) : "n/a";
+  debugPanel.textContent = [
+    "DEBUG (?debug=1)",
+    `FPS ${averageFrameDuration > 0 ? (1000 / averageFrameDuration).toFixed(1) : "--"} · frame ${frameDuration.toFixed(1)} ms`,
+    `paints ${activePaints} · particles ${particles}`,
+    `fever ${game.feverActive ? `ON ${game.feverRemainingTime.toFixed(1)}s` : "OFF"}`,
+    `touch ${lastTouch} · pointers ${activePointerIds.size} (${[...activePointerIds].join(",") || "-"})`,
+    `drag ${activeTouchPointer?.axis ?? "idle"} · capture ${
+      activeTouchPointer && canvas.hasPointerCapture(activeTouchPointer.pointerId) ? "yes" : "no"
+    } · tap ${lastTapAt === null ? "none" : "pending"}`,
+    `bowl X target ${targetX} · actual ${bowlX}`,
+    `BGM scheduler ${sound.musicScheduler === null ? "stopped" : "running"} · RAF queued ${frameRequestId === null ? 0 : 1}`
+  ].join("\n");
 }
 
 function updateTutorialPanel(tutorial) {
@@ -195,6 +248,7 @@ function syncUi() {
   soundToggle.setAttribute("aria-label", sound.enabled ? "사운드 끄기" : "사운드 켜기");
   soundToggle.textContent = sound.enabled ? "♫ 사운드 켜짐" : "♫ 사운드 꺼짐";
   tutorialPanel.hidden = !tutorial;
+  canvas.parentElement.classList.toggle("tutorial-active", Boolean(tutorial));
   tutorialReplay.hidden = !["MENU", "GAME_OVER", "TIMEOUT"].includes(game.state);
   if (tutorial) updateTutorialPanel(tutorial);
 
@@ -226,8 +280,12 @@ function syncUi() {
       statusDot.style.backgroundColor = "#ed6545";
     } else {
       overlay.classList.add("is-hidden");
-      gameStatus.textContent = game.state === "TUTORIAL" ? "TUTORIAL" : "PLAYING";
-      statusDot.style.backgroundColor = "#76a877";
+      gameStatus.textContent = game.state === "TUTORIAL"
+        ? "TUTORIAL"
+        : game.state === "PAUSED"
+          ? "PAUSED"
+          : "PLAYING";
+      statusDot.style.backgroundColor = game.state === "PAUSED" ? "#aaa497" : "#76a877";
     }
 
   }
@@ -295,6 +353,64 @@ function finishTutorial() {
   canvas.focus({ preventScroll: true });
 }
 
+function openHelp() {
+  if (helpDialog.open) return;
+  helpPausedState = game.state;
+  game.state = "PAUSED";
+  game.setDirection("left", false);
+  game.setDirection("right", false);
+  clearTouchGesture();
+  helpDialog.showModal();
+  playPendingSounds();
+  syncUi();
+  helpClose.focus();
+}
+
+function closeHelp() {
+  if (!helpDialog.open) return;
+  helpDialog.close();
+  restoreAfterHelp();
+}
+
+function restoreAfterHelp() {
+  if (helpPausedState === null) return;
+  game.state = helpPausedState;
+  helpPausedState = null;
+  playPendingSounds();
+  syncUi();
+}
+
+function restartTutorialFromHelp() {
+  if (!assetsLoaded) return;
+  sound.unlock();
+  const previousState = helpPausedState;
+  const isLiveGame = previousState === "PLAYING";
+  const isRunningTutorial = previousState === "TUTORIAL";
+  if (isLiveGame && !window.confirm(
+    "튜토리얼을 다시 시작하면 현재 게임 진행 상황이 초기화됩니다. 계속할까요?"
+  )) return;
+
+  closeHelp();
+  sound.stopAll();
+  const started = game.startTutorial({ force: isLiveGame || isRunningTutorial });
+  if (!started) {
+    throw new Error("현재 게임 상태에서 튜토리얼을 다시 시작할 수 없습니다.");
+  }
+  helpPausedState = null;
+  clearTouchGesture();
+  playPendingSounds();
+  syncUi();
+  canvas.focus({ preventScroll: true });
+}
+
+helpButton.addEventListener("click", openHelp);
+helpClose.addEventListener("click", closeHelp);
+helpDialog.addEventListener("cancel", (event) => {
+  event.preventDefault();
+  closeHelp();
+});
+helpTutorial.addEventListener("click", restartTutorialFromHelp);
+
 tutorialSkip.addEventListener("click", () => {
   sound.unlock();
   finishTutorial();
@@ -351,8 +467,7 @@ loadPaintSprites().then(({ sprites, failedCount }) => {
 const maxTapDuration = 300;
 const maxTapMovement = 15;
 const minSwipeUpDistance = 60;
-let activeTouchPointer = null;
-let lastTapAt = null;
+const dragAxisThreshold = 8;
 
 function updateTouchControls() {
   supportsTouchControls = navigator.maxTouchPoints > 0
@@ -365,13 +480,32 @@ const coarsePointerQuery = window.matchMedia("(pointer: coarse)");
 updateTouchControls();
 coarsePointerQuery.addEventListener("change", updateTouchControls);
 
+function clearTouchGesture(pointerId = activeTouchPointer?.pointerId ?? null) {
+  if (pointerId !== null) {
+    activePointerIds.delete(pointerId);
+    if (canvas.hasPointerCapture(pointerId)) canvas.releasePointerCapture(pointerId);
+  }
+  activeTouchPointer = null;
+  lastTapAt = null;
+}
+
 canvas.addEventListener("pointermove", (event) => {
+  if (helpDialog.open) return;
   if (event.pointerType === "touch") {
+    lastTouchInputAt = performance.now();
     if (!activeTouchPointer || event.pointerId !== activeTouchPointer.pointerId) return;
     const deltaX = event.clientX - activeTouchPointer.startX;
     const deltaY = event.clientY - activeTouchPointer.startY;
     if (Math.hypot(deltaX, deltaY) > maxTapMovement) lastTapAt = null;
-    if (Math.abs(deltaX) > Math.abs(deltaY)) {
+    if (activeTouchPointer.axis === "undecided") {
+      const horizontalDistance = Math.abs(deltaX);
+      const verticalDistance = Math.abs(deltaY);
+      if (Math.max(horizontalDistance, verticalDistance) >= dragAxisThreshold) {
+        if (horizontalDistance > verticalDistance * 1.2) activeTouchPointer.axis = "horizontal";
+        else if (verticalDistance > horizontalDistance * 1.2) activeTouchPointer.axis = "vertical";
+      }
+    }
+    if (activeTouchPointer.axis === "horizontal") {
       game.setPointerPosition(getCanvasX(event));
     }
     return;
@@ -382,8 +516,11 @@ canvas.addEventListener("pointermove", (event) => {
 });
 
 canvas.addEventListener("pointerdown", (event) => {
+  if (helpDialog.open) return;
   if (event.pointerType === "touch") {
     event.preventDefault();
+    lastTouchInputAt = performance.now();
+    activePointerIds.add(event.pointerId);
     sound.unlock();
     if (activeTouchPointer) return;
     if (lastTapAt !== null && event.timeStamp - lastTapAt > maxTapDuration) lastTapAt = null;
@@ -391,7 +528,8 @@ canvas.addEventListener("pointerdown", (event) => {
       pointerId: event.pointerId,
       startX: event.clientX,
       startY: event.clientY,
-      startTime: event.timeStamp
+      startTime: event.timeStamp,
+      axis: "undecided"
     };
     canvas.setPointerCapture(event.pointerId);
     return;
@@ -401,7 +539,10 @@ canvas.addEventListener("pointerdown", (event) => {
 });
 
 canvas.addEventListener("pointerup", (event) => {
-  if (event.pointerType !== "touch" || !activeTouchPointer || event.pointerId !== activeTouchPointer.pointerId) return;
+  activePointerIds.delete(event.pointerId);
+  if (event.pointerType !== "touch") return;
+  lastTouchInputAt = performance.now();
+  if (!activeTouchPointer || event.pointerId !== activeTouchPointer.pointerId) return;
   event.preventDefault();
 
   const { startX, startY, startTime } = activeTouchPointer;
@@ -409,9 +550,11 @@ canvas.addEventListener("pointerup", (event) => {
   const deltaY = event.clientY - startY;
   const duration = event.timeStamp - startTime;
   const isTap = Math.hypot(deltaX, deltaY) <= maxTapMovement && duration <= maxTapDuration;
+  const gesturePointerId = activeTouchPointer.pointerId;
   activeTouchPointer = null;
+  if (canvas.hasPointerCapture(gesturePointerId)) canvas.releasePointerCapture(gesturePointerId);
 
-  if (isTap) {
+  if (!helpDialog.open && isTap) {
     game.setPointerPosition(getCanvasX(event));
     const feverTutorialStep = game.state === "TUTORIAL" && game.tutorial?.step === 5;
     const canUseFever = game.state === "PLAYING" || feverTutorialStep;
@@ -425,18 +568,36 @@ canvas.addEventListener("pointerup", (event) => {
   }
 
   lastTapAt = null;
-  if (deltaY <= -minSwipeUpDistance && Math.abs(deltaY) > Math.abs(deltaX)) {
+  if (!helpDialog.open && deltaY <= -minSwipeUpDistance && Math.abs(deltaY) > Math.abs(deltaX)) {
     useUmbrella();
   }
 });
 
 canvas.addEventListener("pointercancel", (event) => {
-  if (event.pointerType !== "touch" || !activeTouchPointer || event.pointerId !== activeTouchPointer.pointerId) return;
-  activeTouchPointer = null;
-  lastTapAt = null;
+  activePointerIds.delete(event.pointerId);
+  if (event.pointerType !== "touch") return;
+  lastTouchInputAt = performance.now();
+  if (!activeTouchPointer || event.pointerId !== activeTouchPointer.pointerId) {
+    lastTapAt = null;
+    return;
+  }
+  clearTouchGesture(event.pointerId);
+});
+
+canvas.addEventListener("lostpointercapture", (event) => {
+  activePointerIds.delete(event.pointerId);
+  if (activeTouchPointer?.pointerId !== event.pointerId) return;
+  clearTouchGesture(event.pointerId);
 });
 
 window.addEventListener("keydown", (event) => {
+  if (helpDialog.open) {
+    if (event.key === "Escape") {
+      event.preventDefault();
+      closeHelp();
+    }
+    return;
+  }
   if (event.key === "ArrowLeft" || event.key === "ArrowRight" || event.code === "Space") {
     event.preventDefault();
   }
@@ -456,6 +617,7 @@ window.addEventListener("keyup", (event) => {
 window.addEventListener("blur", () => {
   game.setDirection("left", false);
   game.setDirection("right", false);
+  clearTouchGesture();
 });
 
 if ("ResizeObserver" in window) {
@@ -468,4 +630,4 @@ const target = COLORS.find((color) => color.id === game.targetColor.id);
 document.querySelector("#target-name").textContent = `${target.id} · ${target.name}`;
 resizeCanvas();
 syncUi();
-requestAnimationFrame(frame);
+scheduleFrame();
