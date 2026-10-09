@@ -179,12 +179,85 @@ loadPaintSprites().then(({ sprites, failedCount }) => {
   }
 });
 
+const maxTapDuration = 300;
+const maxTapMovement = 15;
+const minSwipeUpDistance = 60;
+let activeTouchPointer = null;
+let lastTapAt = null;
+
+function updateTouchControls() {
+  const supportsTouch = navigator.maxTouchPoints > 0
+    || window.matchMedia("(pointer: coarse)").matches;
+  document.body.classList.toggle("touch-controls", supportsTouch);
+}
+
+const coarsePointerQuery = window.matchMedia("(pointer: coarse)");
+updateTouchControls();
+coarsePointerQuery.addEventListener("change", updateTouchControls);
+
 canvas.addEventListener("pointermove", (event) => {
+  if (event.pointerType === "touch") {
+    if (!activeTouchPointer || event.pointerId !== activeTouchPointer.pointerId) return;
+    const deltaX = event.clientX - activeTouchPointer.startX;
+    const deltaY = event.clientY - activeTouchPointer.startY;
+    if (Math.hypot(deltaX, deltaY) > maxTapMovement) lastTapAt = null;
+    if (Math.abs(deltaX) > Math.abs(deltaY)) {
+      game.setPointerPosition(getCanvasX(event));
+    }
+    return;
+  }
   game.setPointerPosition(getCanvasX(event));
 });
 
 canvas.addEventListener("pointerdown", (event) => {
+  if (event.pointerType === "touch") {
+    event.preventDefault();
+    if (activeTouchPointer) return;
+    if (lastTapAt !== null && event.timeStamp - lastTapAt > maxTapDuration) lastTapAt = null;
+    activeTouchPointer = {
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startY: event.clientY,
+      startTime: event.timeStamp
+    };
+    canvas.setPointerCapture(event.pointerId);
+    return;
+  }
   game.setPointerPosition(getCanvasX(event));
+});
+
+canvas.addEventListener("pointerup", (event) => {
+  if (event.pointerType !== "touch" || !activeTouchPointer || event.pointerId !== activeTouchPointer.pointerId) return;
+  event.preventDefault();
+
+  const { startX, startY, startTime } = activeTouchPointer;
+  const deltaX = event.clientX - startX;
+  const deltaY = event.clientY - startY;
+  const duration = event.timeStamp - startTime;
+  const isTap = Math.hypot(deltaX, deltaY) <= maxTapMovement && duration <= maxTapDuration;
+  activeTouchPointer = null;
+
+  if (isTap) {
+    game.setPointerPosition(getCanvasX(event));
+    if (game.state === "PLAYING" && lastTapAt !== null && startTime - lastTapAt <= maxTapDuration) {
+      game.useFever();
+      lastTapAt = null;
+    } else {
+      lastTapAt = game.state === "PLAYING" ? event.timeStamp : null;
+    }
+    return;
+  }
+
+  lastTapAt = null;
+  if (deltaY <= -minSwipeUpDistance && Math.abs(deltaY) > Math.abs(deltaX)) {
+    game.useUmbrella();
+  }
+});
+
+canvas.addEventListener("pointercancel", (event) => {
+  if (event.pointerType !== "touch" || !activeTouchPointer || event.pointerId !== activeTouchPointer.pointerId) return;
+  activeTouchPointer = null;
+  lastTapAt = null;
 });
 
 window.addEventListener("keydown", (event) => {

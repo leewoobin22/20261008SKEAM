@@ -305,7 +305,14 @@ h1 {
   background-image: radial-gradient(#e6dfd2 0.8px, transparent 0.8px);
   background-size: 19px 19px;
   touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
 }
+
+.touch-hint { display: none; }
+body.touch-controls .keyboard-hint { display: none; }
+body.touch-controls .touch-hint { display: inline; }
 
 .canvas-wrap.fever-active {
   box-shadow: inset 0 0 0 4px rgba(236, 177, 64, .75), inset 0 0 35px rgba(240, 195, 99, .18);
