@@ -65,15 +65,17 @@ export class Renderer {
 
   render(game) {
     const context = this.context;
+    const paints = game.tutorialActive ? game.tutorial.paints : game.paints;
     context.clearRect(0, 0, this.width, this.height);
     this.drawBackground(context, game);
-    for (const paint of game.paints) {
+    for (const paint of paints) {
       this.drawPaint(context, paint);
       if (game.feverActive && paint.animation !== "splash") this.drawFeverSparkles(context, game, paint);
     }
     this.drawPaintExplosions(context, game.paintExplosions);
     this.drawPlayer(context, game.player, game.playerHitFlashRemaining);
     if (game.feverActive) this.drawFeverPlayerAura(context, game);
+    if (game.tutorialActive) this.drawTutorialFocus(context, game);
     if (game.umbrellaActive) {
       this.drawUmbrella(context, game.player, game.getUmbrellaOpenProgress());
       this.drawUmbrellaImpacts(context, game.umbrellaImpacts);
@@ -221,6 +223,38 @@ export class Renderer {
     context.strokeStyle = "#f8f4eb";
     context.lineWidth = 3;
     context.stroke();
+    context.restore();
+  }
+
+  drawTutorialFocus(context, game) {
+    const tutorial = game.tutorial;
+    if (!tutorial) return;
+    const pulse = 0.5 + (Math.sin(game.effectTime * 4) + 1) * 0.15;
+    context.save();
+    context.globalAlpha = pulse;
+    context.strokeStyle = "#ed6545";
+    context.lineWidth = 2;
+    context.setLineDash([5, 5]);
+    if (tutorial.step === 1) {
+      context.beginPath();
+      context.ellipse(
+        game.player.x,
+        game.player.y + game.player.height / 2,
+        game.player.width / 2 + 7,
+        game.player.height / 2 + 8,
+        0,
+        0,
+        Math.PI * 2
+      );
+      context.stroke();
+    } else if (tutorial.step >= 2 && tutorial.step <= 5) {
+      const paint = tutorial.paints.find((item) => item.animation !== "splash");
+      if (paint) {
+        context.beginPath();
+        context.arc(paint.x, paint.y, paint.radius + 8, 0, Math.PI * 2);
+        context.stroke();
+      }
+    }
     context.restore();
   }
 

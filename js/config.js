@@ -10,6 +10,7 @@ export const COLORS = [
 
 export const TARGET_COLOR_ID = "RED";
 export const UMBRELLA_REWARD_INTERVAL = 3;
+export const TUTORIAL_STORAGE_KEY = "paint-catcher-tutorial-completed";
 export const SOUND_CONFIG = {
   muteStorageKey: "paint-catcher-muted",
   masterVolume: 0.22,
@@ -87,8 +88,9 @@ export const GAME_CONFIG = {
   },
   fallSpeed: {
     baseMultiplier: 1.2,
-    stageStep: 0.12,
-    maxMultiplier: 2.5
+    stageMultipliers: [1, 1.15, 1.3, 1.5, 1.75, 2, 2.2, 2.4],
+    stageStep: 0.15,
+    maxMultiplier: 3
   },
   umbrellaWidth: 156,
   umbrellaCanopyHeight: 22,

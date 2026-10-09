@@ -81,6 +81,22 @@
           <div class="fever-banner" id="fever-banner" aria-live="polite" hidden>
             <strong>FEVER TIME!</strong><span id="fever-banner-timer">5.0s</span>
           </div>
+          <section class="tutorial-panel" id="tutorial-panel" aria-live="polite" hidden>
+            <button class="tutorial-skip" id="tutorial-skip" type="button">건너뛰기 SKIP →</button>
+            <div class="tutorial-card">
+              <p class="tutorial-step" id="tutorial-step">1 / 6</p>
+              <h2 id="tutorial-title"></h2>
+              <p id="tutorial-copy"></p>
+              <p class="tutorial-action" id="tutorial-action"></p>
+              <ul class="tutorial-rules" id="tutorial-rules" hidden>
+                <li>정답 물감 +1점 · 오답 물감 수집 시 생명 -1</li>
+                <li>제한 시간 90초 · 스테이지마다 목표 점수 증가</li>
+                <li>정답 3개마다 우산 획득</li>
+                <li>생명 3개를 유지해 클리어하면 피버카드 획득</li>
+              </ul>
+              <button class="start-button tutorial-start" id="tutorial-start" type="button" hidden>게임 시작 <span aria-hidden="true">→</span></button>
+            </div>
+          </section>
           <canvas id="game-canvas" tabindex="0" aria-label="물감이 떨어지는 게임 화면. 마우스 또는 좌우 방향키로 그릇을 움직입니다.">
             이 게임을 플레이하려면 Canvas를 지원하는 브라우저가 필요합니다.
           </canvas>
@@ -91,6 +107,7 @@
               <h2 id="overlay-title">물감을 받아 볼까요?</h2>
               <p id="overlay-copy">빨간 물감은 받고, 다른 색은 피하세요.</p>
               <button class="start-button" id="start-button" type="button">게임 시작 <span aria-hidden="true">→</span></button>
+              <button class="tutorial-replay" id="tutorial-replay" type="button">튜토리얼 다시 보기</button>
             </div>
           </div>
         </div>
