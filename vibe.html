@@ -57,7 +57,10 @@
               <span id="umbrella-count">0</span>
               <span class="umbrella-timer" id="umbrella-timer" hidden></span>
             </span>
-            <span class="umbrella-hint"><span class="keycap">Space</span> 사용</span>
+            <span class="umbrella-hint">
+              <span class="keyboard-hint"><span class="keycap">Space</span> 사용</span>
+              <span class="touch-hint">↑ 스와이프 사용</span>
+            </span>
           </div>
           <div class="hud-fever">
             <span class="hud-label">FEVER CARD</span>
@@ -66,7 +69,10 @@
               <span id="fever-card-count">0</span>
               <span class="fever-timer" id="fever-timer" hidden></span>
             </span>
-            <span class="fever-hint"><span class="keycap">F</span> 사용</span>
+            <span class="fever-hint">
+              <span class="keyboard-hint"><span class="keycap">F</span> 사용</span>
+              <span class="touch-hint">두 번 터치 사용</span>
+            </span>
           </div>
           <div class="hud-feedback" id="feedback" role="status" aria-live="polite">빨간 물감 5개를 모아 보세요!</div>
         </div>
@@ -90,7 +96,11 @@
         </div>
 
         <div class="game-footer">
-          <p class="controls-hint"><span class="keycap">←</span><span class="keycap">→</span> 또는 마우스로 그릇 이동</p>
+          <p class="controls-hint">
+            <span>그릇 이동: </span>
+            <span class="keyboard-hint"><span class="keycap">←</span><span class="keycap">→</span> 또는 마우스</span>
+            <span class="touch-hint">좌우로 드래그</span>
+          </p>
           <span class="footer-note"><span class="live-dot" id="status-dot"></span><span id="game-status">READY TO PLAY</span></span>
         </div>
       </section>
