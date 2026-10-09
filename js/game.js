@@ -125,10 +125,11 @@ export class Game {
     return GAME_CONFIG.fallSpeed.baseMultiplier * this.getStageSpeedMultiplier(stage);
   }
 
-  startTutorial() {
-    if (this.state === "PLAYING" || this.state === "TUTORIAL") return false;
+  startTutorial({ force = false } = {}) {
+    if (!force && (this.state === "PLAYING" || this.state === "TUTORIAL")) return false;
     this.targetColor = COLORS.find((color) => color.id === TARGET_COLOR_ID);
     this.tutorialActive = true;
+    this.fallSpeedMultiplier = this.getStageFallSpeedMultiplier(1);
     this.tutorial = {
       step: 1,
       paints: [],

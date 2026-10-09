@@ -38,6 +38,10 @@ const tutorialAction = document.querySelector("#tutorial-action");
 const tutorialRules = document.querySelector("#tutorial-rules");
 const tutorialStart = document.querySelector("#tutorial-start");
 const tutorialReplay = document.querySelector("#tutorial-replay");
+const helpButton = document.querySelector("#help-button");
+const helpDialog = document.querySelector("#help-dialog");
+const helpClose = document.querySelector("#help-close");
+const helpTutorial = document.querySelector("#help-tutorial");
 const game = new Game();
 const renderer = new Renderer(canvas);
 const sound = new Sound();
@@ -46,6 +50,7 @@ let displayedState = null;
 let lastSoundGameState = game.state;
 let assetsLoaded = false;
 let supportsTouchControls = false;
+let helpPausedState = null;
 
 function hasCompletedTutorial() {
   try {
@@ -195,6 +200,7 @@ function syncUi() {
   soundToggle.setAttribute("aria-label", sound.enabled ? "사운드 끄기" : "사운드 켜기");
   soundToggle.textContent = sound.enabled ? "♫ 사운드 켜짐" : "♫ 사운드 꺼짐";
   tutorialPanel.hidden = !tutorial;
+  canvas.parentElement.classList.toggle("tutorial-active", Boolean(tutorial));
   tutorialReplay.hidden = !["MENU", "GAME_OVER", "TIMEOUT"].includes(game.state);
   if (tutorial) updateTutorialPanel(tutorial);
 
@@ -226,8 +232,12 @@ function syncUi() {
       statusDot.style.backgroundColor = "#ed6545";
     } else {
       overlay.classList.add("is-hidden");
-      gameStatus.textContent = game.state === "TUTORIAL" ? "TUTORIAL" : "PLAYING";
-      statusDot.style.backgroundColor = "#76a877";
+      gameStatus.textContent = game.state === "TUTORIAL"
+        ? "TUTORIAL"
+        : game.state === "PAUSED"
+          ? "PAUSED"
+          : "PLAYING";
+      statusDot.style.backgroundColor = game.state === "PAUSED" ? "#aaa497" : "#76a877";
     }
 
   }
@@ -294,6 +304,66 @@ function finishTutorial() {
   syncUi();
   canvas.focus({ preventScroll: true });
 }
+
+function openHelp() {
+  if (helpDialog.open) return;
+  helpPausedState = game.state;
+  game.state = "PAUSED";
+  game.setDirection("left", false);
+  game.setDirection("right", false);
+  activeTouchPointer = null;
+  lastTapAt = null;
+  helpDialog.showModal();
+  playPendingSounds();
+  syncUi();
+  helpClose.focus();
+}
+
+function closeHelp() {
+  if (!helpDialog.open) return;
+  helpDialog.close();
+  restoreAfterHelp();
+}
+
+function restoreAfterHelp() {
+  if (helpPausedState === null) return;
+  game.state = helpPausedState;
+  helpPausedState = null;
+  playPendingSounds();
+  syncUi();
+}
+
+function restartTutorialFromHelp() {
+  if (!assetsLoaded) return;
+  sound.unlock();
+  const previousState = helpPausedState;
+  const isLiveGame = previousState === "PLAYING";
+  const isRunningTutorial = previousState === "TUTORIAL";
+  if (isLiveGame && !window.confirm(
+    "튜토리얼을 다시 시작하면 현재 게임 진행 상황이 초기화됩니다. 계속할까요?"
+  )) return;
+
+  closeHelp();
+  sound.stopAll();
+  const started = game.startTutorial({ force: isLiveGame || isRunningTutorial });
+  if (!started) {
+    throw new Error("현재 게임 상태에서 튜토리얼을 다시 시작할 수 없습니다.");
+  }
+  helpPausedState = null;
+  activeTouchPointer = null;
+  lastTapAt = null;
+  playPendingSounds();
+  syncUi();
+  canvas.focus({ preventScroll: true });
+}
+
+helpButton.addEventListener("click", openHelp);
+helpClose.addEventListener("click", closeHelp);
+helpDialog.addEventListener("cancel", (event) => {
+  event.preventDefault();
+  closeHelp();
+});
+helpTutorial.addEventListener("click", restartTutorialFromHelp);
 
 tutorialSkip.addEventListener("click", () => {
   sound.unlock();
@@ -366,6 +436,7 @@ updateTouchControls();
 coarsePointerQuery.addEventListener("change", updateTouchControls);
 
 canvas.addEventListener("pointermove", (event) => {
+  if (helpDialog.open) return;
   if (event.pointerType === "touch") {
     if (!activeTouchPointer || event.pointerId !== activeTouchPointer.pointerId) return;
     const deltaX = event.clientX - activeTouchPointer.startX;
@@ -382,6 +453,7 @@ canvas.addEventListener("pointermove", (event) => {
 });
 
 canvas.addEventListener("pointerdown", (event) => {
+  if (helpDialog.open) return;
   if (event.pointerType === "touch") {
     event.preventDefault();
     sound.unlock();
@@ -401,6 +473,7 @@ canvas.addEventListener("pointerdown", (event) => {
 });
 
 canvas.addEventListener("pointerup", (event) => {
+  if (helpDialog.open) return;
   if (event.pointerType !== "touch" || !activeTouchPointer || event.pointerId !== activeTouchPointer.pointerId) return;
   event.preventDefault();
 
@@ -437,6 +510,13 @@ canvas.addEventListener("pointercancel", (event) => {
 });
 
 window.addEventListener("keydown", (event) => {
+  if (helpDialog.open) {
+    if (event.key === "Escape") {
+      event.preventDefault();
+      closeHelp();
+    }
+    return;
+  }
   if (event.key === "ArrowLeft" || event.key === "ArrowRight" || event.code === "Space") {
     event.preventDefault();
   }

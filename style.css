@@ -333,6 +333,79 @@ h1 {
   -webkit-touch-callout: none;
 }
 
+.help-button {
+  position: absolute;
+  z-index: 2;
+  top: 11px;
+  right: 11px;
+  width: 44px;
+  height: 44px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 1px solid rgba(37, 35, 31, .18);
+  border-radius: 50%;
+  color: #25231f;
+  background: rgba(255, 254, 250, .96);
+  box-shadow: 0 2px 8px rgba(61, 52, 39, .1);
+  cursor: pointer;
+  font-size: 22px;
+  font-weight: 800;
+}
+
+.help-button:hover { border-color: var(--orange); color: var(--orange); }
+.help-button:focus-visible, .help-close:focus-visible { outline: 2px solid var(--orange); outline-offset: 2px; }
+.tutorial-panel:not([hidden]) .tutorial-skip { right: 64px; }
+
+.help-dialog {
+  width: min(450px, calc(100% - 28px));
+  max-width: none;
+  max-height: 90vh;
+  max-height: min(90dvh, 620px);
+  overflow: auto;
+  padding: 0;
+  border: 1px solid rgba(45, 41, 34, .14);
+  border-radius: 15px;
+  color: var(--ink);
+  background: #fffefa;
+  box-shadow: 0 22px 70px rgba(44, 37, 27, .25);
+  overscroll-behavior: contain;
+  touch-action: pan-y;
+}
+
+.help-dialog::backdrop { background: rgba(37, 35, 31, .48); backdrop-filter: blur(2px); }
+.help-content { position: relative; padding: 25px 24px 23px; }
+
+.help-close {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  width: 44px;
+  height: 44px;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: 50%;
+  color: #716b60;
+  background: transparent;
+  cursor: pointer;
+  font-size: 27px;
+  line-height: 1;
+}
+
+.help-close:hover { color: var(--orange); background: #f8f3e9; }
+.help-kicker { margin: 0 0 4px; color: #a09a8e; font-family: "DM Mono", monospace; font-size: 9px; letter-spacing: .13em; }
+.help-content h2 { margin: 0 0 15px; font-size: 25px; letter-spacing: -.04em; }
+.help-rules { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; }
+.help-rules li { position: relative; padding-left: 18px; color: #5f5a51; font-family: "Gowun Dodum", sans-serif; font-size: 13px; line-height: 1.55; }
+.help-rules li::before { position: absolute; left: 0; color: var(--orange); content: "•"; font-weight: 800; }
+.help-controls { display: grid; gap: 9px; margin: 17px 0; }
+.help-controls section { padding: 11px 13px; border: 1px solid #eee8dd; border-radius: 9px; background: #faf8f2; }
+.help-controls h3 { margin: 0 0 5px; color: var(--orange); font-size: 12px; }
+.help-controls p { margin: 3px 0; color: #69645b; font-family: "Gowun Dodum", sans-serif; font-size: 12px; line-height: 1.5; }
+.help-controls kbd { padding: 2px 5px; border: 1px solid #e3ddd1; border-radius: 4px; color: #555148; background: #fffefa; font: 10px "DM Mono", monospace; }
+.help-tutorial { min-height: 44px; }
+
 .touch-hint { display: none; }
 body.touch-controls .keyboard-hint { display: none; }
 body.touch-controls .touch-hint { display: inline; }

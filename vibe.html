@@ -78,6 +78,7 @@
         </div>
 
         <div class="canvas-wrap">
+          <button class="help-button" id="help-button" type="button" aria-label="도움말 열기" aria-haspopup="dialog">?</button>
           <div class="fever-banner" id="fever-banner" aria-live="polite" hidden>
             <strong>FEVER TIME!</strong><span id="fever-banner-timer">5.0s</span>
           </div>
@@ -111,6 +112,31 @@
             </div>
           </div>
         </div>
+
+        <dialog class="help-dialog" id="help-dialog" aria-labelledby="help-title">
+          <div class="help-content">
+            <button class="help-close" id="help-close" type="button" aria-label="도움말 닫기">×</button>
+            <p class="help-kicker">HOW TO PLAY</p>
+            <h2 id="help-title">도움말</h2>
+            <ul class="help-rules">
+              <li>목표 색상 물감을 받으면 점수를 얻어요.</li>
+              <li>다른 색상의 물감을 받으면 생명이 줄어요.</li>
+            </ul>
+            <div class="help-controls">
+              <section>
+                <h3>PC</h3>
+                <p>방향키 또는 마우스로 이동</p>
+                <p><kbd>Space</kbd> 우산 · <kbd>F</kbd> 피버타임</p>
+              </section>
+              <section>
+                <h3>모바일</h3>
+                <p>좌우로 드래그해 이동</p>
+                <p>위로 스와이프해 우산 · 더블 탭으로 피버타임</p>
+              </section>
+            </div>
+            <button class="start-button help-tutorial" id="help-tutorial" type="button">튜토리얼 다시 시작</button>
+          </div>
+        </dialog>
 
         <div class="game-footer">
           <p class="controls-hint">
